@@ -61,8 +61,9 @@ function metricHtml(name, pct, resetsAt) {
 function badgeHtml(acc) {
   if (acc.loggedIn) {
     return `
-      <span class="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg bg-system-green/10 border border-system-green/20 text-system-green">
-        <span class="w-1.5 h-1.5 rounded-full bg-system-green"></span>signed in
+      <span class="inline-flex items-center gap-1.5 text-sm font-medium px-2.5 py-1 rounded-lg bg-system-green/10 border border-system-green/20 text-system-green max-w-full">
+        <span class="w-1.5 h-1.5 rounded-full bg-system-green shrink-0"></span>
+        <span class="truncate">${esc(acc.email || 'signed in')}</span>
       </span>`;
   }
   return `
@@ -74,7 +75,6 @@ function badgeHtml(acc) {
 function cardHtml(acc) {
   const r = state.results.get(acc.label);
   const phase = state.phases.get(acc.label);
-  const title = acc.email || (acc.loginActive ? 'Signing in…' : 'New account');
 
   let body = '';
   if (phase) {
@@ -121,8 +121,7 @@ function cardHtml(acc) {
   return `
     <article class="glass-panel rounded-2xl p-4 ${state.activeLogin === acc.label && !state.loginDone ? 'ring-1 ring-system-blue/50' : ''}">
       <div class="flex items-center gap-2">
-        <h3 class="text-lg font-semibold flex-1 truncate" title="${esc(title)}">${esc(title)}</h3>
-        ${badgeHtml(acc)}
+        <div class="flex-1 min-w-0">${badgeHtml(acc)}</div>
         ${signinBtn}
       </div>
       ${body}
