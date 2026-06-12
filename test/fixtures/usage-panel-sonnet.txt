@@ -1,0 +1,93 @@
+Claude Codev2.1.173
+Tips for getting started
+Welcome back Dev! AskClaudetocreateanewapporclonearepository
+
+What's new
+`claudeagents--json`nowincludes`waitingFor`showingwhat…
+`--tools`:explicitlylistingGrep/Globnowprovidesthededic…
+Opus 4.8 (1M context) with ma… · Claude Team · `/effort`nowconfirmswhenyourchosenlevelwillpersistas…
+example /release-notes for more
+~/projects/example/.scratch
+
+max · /effort
+
+❯ Try "fix lint errors"
+
+? for shortcuts · ← for agents0q
+/usage
+
+/usage Show session cost, plan usage, and activity stats
+/usage-credits Configure usage credits to keep working when you hit a limit
+/context Visualize current context usage as a colored grid
+/effort Set effort level for model usage
+/team-onboarding Help teammates ramp on Claude Code with a guide from your usage
+⚠ 1 setup issue: MCP · /doctor
+
+SettingsStatusConfig Usage Stats
+Session
+Total cost: $0.0000
+Total duration(API):0s
+Ttal duration(wall):0s
+Total codechanges:0linesadded, 0 lins remved
+Usge: 0input, 0 ouput, 0 cache read, 0 cache write
+
+Loading usage data…
+
+Esc to cancel
+
+SettingsStatusConfig Usage Stats
+
+Session
+
+Total cost: $0.0000
+Total duration (API): 0s
+Total duration (wall): 0s
+Total code changes: 0 lines added, 0 lines removed
+Usage: 0 input, 0 output, 0 cache read, 0 cache write
+Current session
+18%used
+Resets 1:29am (Asia/Saigon)
+Current week (all models)
+30%used
+Resets Jun 13 at 6pm (Asia/Saigon)
+
+Current week (Sonnet only)
+1%used
+Resets Jun 13 at 5:59pm (Asia/Saigon)
+
+What's contributing to your limits usage?
+Approximate,basedonlocal sessions on this machin — does notinclude other devices or claude.ai
+Scnning local sessions…
+
+SettingsStatus Config Usage Stats
+
+Session
+
+Total cost: $0.0000
+Total duration (API): 0s
+Total duration (wall): 0s
+Total code changs: 0 lines added, 0 lines removed
+Usage: 0 input, 0 output, 0 cache read, 0 cache write
+
+Current session
+18%used
+Resets 1:29am (Asia/Saigon)
+
+Current week (all models)
+30%used
+Resets Jun 13 at 6pm (Asia/Saigon)
+
+Current week (Sonnet only)
+1%used
+Resets Jun 13 at 5:59pm (Asia/Saigon)
+
+What's contributing to your limits usage?
+Approximate, based on local sessions on this machine — does not include other devices or claude.ai
+
+Last 24h ·theseareindependent characteristics of your usage, not a breakdown
+88% of your usage came fromsubagent-heavysessions
+Each subagent runs its own requests. Be deliberate about spawning them — and
+consider configuring acheaper model for simpler subagents.
+62% of your usage was at >150k context
+Longer session are more expnve even when cached. /cmpact md-task, /clear
+when switching to new tasks.

@@ -1,0 +1,16 @@
+# dependencies / build
+node_modules/
+dist/
+
+# per-account Claude config dirs — live OAuth state, never commit
+accounts/
+accounts.json
+
+# scratch cwd used by spawned claude REPLs
+.scratch/
+
+# local captures from the spike script
+captures/
+
+.DS_Store
+*.log

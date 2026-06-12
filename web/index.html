@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Claude Quota Monitor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Claude Quota Monitor</h1>
+    <div class="toolbar">
+      <button id="check-btn" class="primary">Check usage</button>
+      <label class="auto">
+        <input type="checkbox" id="auto-toggle">
+        auto every
+        <input type="number" id="auto-mins" value="15" min="1" max="120">
+        min
+      </label>
+      <span id="status" class="status"></span>
+    </div>
+  </header>
+
+  <main>
+    <section id="cards" class="cards"></section>
+
+    <section class="panel add">
+      <h2>Add account</h2>
+      <form id="add-form">
+        <input id="add-label" placeholder="label, e.g. personal" autocomplete="off"
+               pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,31}" required>
+        <button type="submit" class="primary">Create + login</button>
+      </form>
+      <p class="hint">
+        Creates an isolated <code>CLAUDE_CONFIG_DIR</code> under <code>accounts/&lt;label&gt;</code> and starts a real
+        <code>claude</code> login session below. A browser window may open by itself; otherwise click the OAuth URL when
+        it appears, sign in, then paste the code back into the session input. Tokens stay in that config dir / your OS
+        keychain — this tool never sees them.
+      </p>
+    </section>
+
+    <section id="login-panel" class="panel login hidden">
+      <h2>
+        Login session: <span id="login-label"></span>
+        <span class="spacer"></span>
+        <button id="login-hide">hide</button>
+        <button id="login-stop" class="danger">stop session</button>
+      </h2>
+      <div id="login-urls" class="urls"></div>
+      <pre id="login-output">(no output yet)</pre>
+      <div class="login-input">
+        <input id="login-text" placeholder="type or paste here, press Enter to send">
+        <div class="keys">
+          <button type="button" data-key="enter">⏎ Enter</button>
+          <button type="button" data-key="up">↑</button>
+          <button type="button" data-key="down">↓</button>
+          <button type="button" data-key="esc">Esc</button>
+          <button type="button" data-key="1">1</button>
+          <button type="button" data-key="2">2</button>
+          <button type="button" data-key="3">3</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    local-only tool · binds 127.0.0.1 · drives the real <code>claude</code> CLI, parsing of <code>/usage</code> may break
+    across Claude Code versions — raw output is always available per card
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
