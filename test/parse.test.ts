@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { cleanCapture, parseUsage, looksLoggedOut } from '../src/parse.js';
+import { cleanCapture, parseUsage, looksLoggedOut, TRUST_PROMPT_RE } from '../src/parse.js';
 
 const fixturesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const fixture = (name: string) => fs.readFileSync(path.join(fixturesDir, name), 'utf8');
@@ -105,4 +105,14 @@ test('detects login/onboarding screens', () => {
   assert.ok(looksLoggedOut('Choosethetextstylethatlooksbestwithyourterminal'));
   assert.ok(looksLoggedOut('Selectloginmethod'));
   assert.ok(!looksLoggedOut(fixture('usage-panel-sonnet.txt')));
+});
+
+test('detects the folder-trust dialog across claude versions', () => {
+  // older wording
+  assert.ok(TRUST_PROMPT_RE.test('Do you trust the files in this folder?'));
+  // claude 2.1.x wording, with and without spaces (as captured from a real PTY)
+  assert.ok(TRUST_PROMPT_RE.test('Quick safety check: Is this a project you created or one you trust?'));
+  assert.ok(TRUST_PROMPT_RE.test('Quicksafetycheck:Isthisaprojectyoucreatedoroneyoutrust?'));
+  assert.ok(TRUST_PROMPT_RE.test('❯1.Yes,Itrustthisfolder'));
+  assert.ok(!TRUST_PROMPT_RE.test(fixture('usage-panel-sonnet.txt')));
 });

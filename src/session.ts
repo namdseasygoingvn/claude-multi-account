@@ -37,10 +37,17 @@ export function spawnClaude(configDir: string | null, opts: SpawnOptions = {}): 
   } else {
     delete env.CLAUDE_CONFIG_DIR;
   }
-  // This tool may itself be run from inside a Claude Code session; the child
-  // REPL must not inherit the parent's session markers.
+  // Credentials and routing must come from the account's own config dir —
+  // never from whatever environment launched this server, which may itself
+  // be a Claude Code session or a shell with API keys exported.
+  delete env.ANTHROPIC_API_KEY;
+  delete env.ANTHROPIC_AUTH_TOKEN;
+  delete env.ANTHROPIC_BASE_URL;
   delete env.CLAUDECODE;
-  delete env.CLAUDE_CODE_ENTRYPOINT;
+  delete env.CLAUDE_EFFORT;
+  for (const k of Object.keys(env)) {
+    if (k.startsWith('CLAUDE_CODE_')) delete env[k];
+  }
   env.TERM = 'xterm-256color';
 
   return pty.spawn(CLAUDE_BIN, [], {

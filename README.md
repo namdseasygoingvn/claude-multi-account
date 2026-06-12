@@ -28,17 +28,19 @@ A local tool that watches the usage quota of **multiple Claude accounts** at onc
 
 ```bash
 npm install
-npm run dev          # → http://127.0.0.1:4747
+npm run dev          # → http://127.0.0.1:3000
 ```
 
-Requires Node 18+ and the `claude` CLI on PATH (`CLAUDE_BIN` env var overrides the binary; `PORT` overrides the port).
+Requires Node 18+ and the `claude` CLI on PATH (`CLAUDE_BIN` env var overrides the binary; `PORT` overrides the port). The web UI loads Tailwind and lucide icons from CDNs, so the first page load needs internet.
 
 ### Add an account
 
-1. Type a label (e.g. `work`) and hit **Create + login**. This creates `accounts/work/` as that account's `CLAUDE_CONFIG_DIR` and starts a real `claude` login session, streamed into the page.
-2. Drive the onboarding with the on-screen keys (↑ ↓ ⏎), pick *Claude account with subscription*; your browser may open by itself, otherwise click the OAuth URL that appears.
-3. Sign in in the browser, then paste the code back into the session input if prompted.
-4. Done — the card shows the signed-in email. Tokens live in that config dir / your OS keychain; this tool never sees or stores them.
+1. Type a label (e.g. `work`) and hit **Create & sign in**. This creates `accounts/work/` as that account's `CLAUDE_CONFIG_DIR` and starts a real `claude` login session behind the scenes.
+2. Onboarding is driven automatically — the tool presses through theme selection, picks *Claude account with subscription*, and accepts the folder-trust prompt. Your browser opens the Claude sign-in page right away (an OAuth URL is also shown as fallback).
+3. Finish signing in in the browser. The tool detects the completed authentication, finishes the remaining setup screens, and shuts the session down by itself — the modal closes and the card shows the signed-in email.
+4. Tokens live in that config dir / your OS keychain (one keychain item per config dir); this tool never sees or stores them.
+
+> ⚠️ **The browser decides which account you get.** If you're already signed in to claude.ai in your default browser, the OAuth flow can complete instantly with *that* account — no login form shown. Before adding a new account, sign in to the right claude.ai account first (or use a private window for the OAuth URL).
 
 ### Monitor your existing main account
 
@@ -71,12 +73,11 @@ npm run spike -- --save capture.txt     # keep the cleaned capture
 | Method | Path | Purpose |
 |---|---|---|
 | `GET`  | `/api/accounts` | List labels + login status |
-| `POST` | `/api/accounts` | `{ label }` → create config dir, start login PTY |
-| `POST` | `/api/accounts/:label/login` | Start (or reuse) the login PTY |
-| `POST` | `/api/accounts/:label/login/stop` | Kill the login PTY |
-| `POST` | `/api/accounts/:label/input` | `{ data }` → raw keystrokes into the login PTY |
+| `POST` | `/api/accounts` | `{ label }` → create config dir, start auto-driven login session |
+| `POST` | `/api/accounts/:label/login` | Start (or reuse) the login session |
+| `POST` | `/api/accounts/:label/login/stop` | Kill a login session (it normally stops itself on success) |
 | `POST` | `/api/usage/check` | `{ labels? }` → run `/usage` on all (or some), return results |
-| `WS`   | `/ws` | Login output snapshots, OAuth URLs, usage progress + results |
+| `WS`   | `/ws` | Login status/URL/success events, usage progress + results |
 
 A usage result carries the parsed sections (`pct`, `resetsAt` per section), a confidence flag, and the ANSI-stripped raw capture as a fallback — the UI always lets you expand the raw panel when parsing looks off.
 
@@ -102,7 +103,8 @@ accounts.json    # label → config dir registry          (gitignored)
 
 - The machine ends up holding **live OAuth state for every registered account**. The server binds `127.0.0.1` only — never expose it to the LAN.
 - The registry stores labels and paths, **no secrets**. Tokens stay in each config dir / OS keychain. `accounts/` and `accounts.json` are gitignored.
-- Login is human-driven by design: the tool surfaces the OAuth URL and forwards your keystrokes, nothing more. Removing an account should be `/logout` in that dir — don't hard-delete config dirs casually.
+- The browser sign-in itself stays human: the tool only answers onboarding menus (theme, login method, trust, "press Enter") and never touches credentials. Spawned REPLs get a scrubbed environment (`ANTHROPIC_*` / `CLAUDE_CODE_*` removed) so each account can only authenticate via its own config dir.
+- Removing an account should be `/logout` in that dir (clears its keychain item) — don't hard-delete config dirs casually.
 
 ## Gotchas & limits
 

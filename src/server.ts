@@ -14,7 +14,7 @@ import { LoginManager } from './logins.js';
 import { checkUsage } from './usage.js';
 import type { AccountStatus } from './types.js';
 
-const PORT = Number(process.env.PORT || 4747);
+const PORT = Number(process.env.PORT || 3000);
 // Local only — this machine holds live OAuth state for every registered
 // account. Never bind this to a LAN/public interface.
 const HOST = '127.0.0.1';
@@ -40,6 +40,8 @@ function errMsg(err: unknown): string {
 const logins = new LoginManager({
   onSnapshot: (label, snapshot) => broadcast({ type: 'login-output', label, snapshot }),
   onUrl: (label, url) => broadcast({ type: 'login-url', label, url }),
+  onStatus: (label, status) => broadcast({ type: 'login-status', label, status }),
+  onSuccess: (label, email) => broadcast({ type: 'login-success', label, email }),
   onExit: (label, exitCode) => broadcast({ type: 'login-exit', label, exitCode }),
 });
 
@@ -88,20 +90,6 @@ app.post('/api/accounts/:label/login', (req, res) => {
 app.post('/api/accounts/:label/login/stop', (req, res) => {
   const stopped = logins.stop(req.params.label);
   res.json({ stopped });
-});
-
-/** Raw keystrokes from the UI into the login PTY (arrow keys, pasted code, Enter…). */
-app.post('/api/accounts/:label/input', (req, res) => {
-  const data = typeof req.body?.data === 'string' ? req.body.data : '';
-  if (!data) {
-    res.status(400).json({ error: 'body must be { data: string }' });
-    return;
-  }
-  if (!logins.write(req.params.label, data)) {
-    res.status(409).json({ error: 'no active login session for this account' });
-    return;
-  }
-  res.json({ ok: true });
 });
 
 let checking = false;

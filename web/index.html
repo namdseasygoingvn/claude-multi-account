@@ -4,70 +4,166 @@
   <meta charset="utf-8">
   <title>Claude Quota Monitor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style type="text/tailwindcss">
+    @theme {
+      --color-system-gray6: #1C1C1E;
+      --color-system-gray5: #2C2C2E;
+      --color-system-gray4: #3A3A3C;
+      --color-system-gray3: #48484A;
+      --color-system-gray2: #636366;
+      --color-system-gray: #8E8E93;
+      --color-system-blue: #F99C24;
+      --color-system-red: #FF3B30;
+      --color-system-green: #34C759;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+  </style>
+  <style>
+    .glass {
+      background: rgba(28, 28, 30, 0.65);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .glass-panel {
+      background: rgba(44, 44, 46, 0.4);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    ::-webkit-scrollbar { width: 10px; background: transparent; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: #48484a;
+      border-radius: 10px;
+      border: 2px solid transparent;
+      background-clip: content-box;
+    }
+    ::-webkit-scrollbar-thumb:hover { background: #636366; }
+  </style>
 </head>
-<body>
-  <header>
-    <h1>Claude Quota Monitor</h1>
-    <div class="toolbar">
-      <button id="check-btn" class="primary">Check usage</button>
-      <label class="auto">
-        <input type="checkbox" id="auto-toggle">
-        auto every
-        <input type="number" id="auto-mins" value="15" min="1" max="120">
-        min
-      </label>
-      <span id="status" class="status"></span>
+<body class="bg-black text-white font-sans selection:bg-system-blue/30 selection:text-white">
+
+  <!-- Header -->
+  <header class="fixed top-0 left-0 right-0 h-14 glass border-b border-white/10 z-50 flex items-center gap-3 px-4">
+    <div class="w-8 h-8 bg-gradient-to-br from-[#F3EB35] to-[#F99C24] rounded-xl shadow-lg shadow-[#F99C24]/30 flex items-center justify-center shrink-0">
+      <i data-lucide="gauge" class="w-4 h-4 text-black"></i>
     </div>
+    <h1 class="text-lg font-semibold whitespace-nowrap">Claude Quota Monitor</h1>
+    <span id="status" class="text-sm text-gray-500 truncate"></span>
+    <div class="flex-1"></div>
+    <div class="hidden sm:flex items-center gap-2">
+      <span class="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Auto</span>
+      <div id="auto-seg" class="flex bg-system-gray5/50 p-1 rounded-lg">
+        <button data-mins="0"  class="px-2.5 py-1 text-xs rounded-[6px] transition-colors">Off</button>
+        <button data-mins="5"  class="px-2.5 py-1 text-xs rounded-[6px] transition-colors">5m</button>
+        <button data-mins="15" class="px-2.5 py-1 text-xs rounded-[6px] transition-colors">15m</button>
+        <button data-mins="30" class="px-2.5 py-1 text-xs rounded-[6px] transition-colors">30m</button>
+      </div>
+    </div>
+    <button id="check-btn"
+      class="inline-flex items-center gap-2 bg-gradient-to-r from-[#F3EB35] to-[#F99C24] hover:opacity-90 text-black font-bold text-sm rounded-xl px-4 py-2 shadow-lg shadow-[#F99C24]/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+      <i data-lucide="refresh-cw" class="w-4 h-4"></i><span id="check-btn-text">Check usage</span>
+    </button>
   </header>
 
-  <main>
-    <section id="cards" class="cards"></section>
-
-    <section class="panel add">
-      <h2>Add account</h2>
-      <form id="add-form">
-        <input id="add-label" placeholder="label, e.g. personal" autocomplete="off"
-               pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,31}" required>
-        <button type="submit" class="primary">Create + login</button>
-      </form>
-      <p class="hint">
-        Creates an isolated <code>CLAUDE_CONFIG_DIR</code> under <code>accounts/&lt;label&gt;</code> and starts a real
-        <code>claude</code> login session below. A browser window may open by itself; otherwise click the OAuth URL when
-        it appears, sign in, then paste the code back into the session input. Tokens stay in that config dir / your OS
-        keychain — this tool never sees them.
-      </p>
-    </section>
-
-    <section id="login-panel" class="panel login hidden">
-      <h2>
-        Login session: <span id="login-label"></span>
-        <span class="spacer"></span>
-        <button id="login-hide">hide</button>
-        <button id="login-stop" class="danger">stop session</button>
-      </h2>
-      <div id="login-urls" class="urls"></div>
-      <pre id="login-output">(no output yet)</pre>
-      <div class="login-input">
-        <input id="login-text" placeholder="type or paste here, press Enter to send">
-        <div class="keys">
-          <button type="button" data-key="enter">⏎ Enter</button>
-          <button type="button" data-key="up">↑</button>
-          <button type="button" data-key="down">↓</button>
-          <button type="button" data-key="esc">Esc</button>
-          <button type="button" data-key="1">1</button>
-          <button type="button" data-key="2">2</button>
-          <button type="button" data-key="3">3</button>
-        </div>
+  <!-- Sidebar -->
+  <aside class="group/sidebar fixed left-0 top-14 bottom-0 w-14 hover:w-44 glass border-r border-white/10 z-40 overflow-hidden transition-[width] duration-200 ease-in-out">
+    <nav class="flex flex-col gap-2 p-2 h-full">
+      <a href="/" class="flex items-center gap-3 p-2 rounded-xl bg-gradient-to-br from-[#F3EB35] to-[#F99C24] text-black shadow-lg shadow-[#F99C24]/30 transition-all duration-200">
+        <i data-lucide="layout-dashboard" class="w-5 h-5 shrink-0"></i>
+        <span class="text-sm font-semibold whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 delay-75">Usage</span>
+      </a>
+      <a href="https://github.com/namdseasygoingvn/ezg-claude-multi-account" target="_blank" rel="noopener noreferrer"
+         class="flex items-center gap-3 p-2 rounded-xl text-gray-500 hover:text-white hover:bg-white/10 transition-all duration-200">
+        <i data-lucide="github" class="w-5 h-5 shrink-0"></i>
+        <span class="text-sm whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 delay-75">Repository</span>
+      </a>
+      <div class="flex-1"></div>
+      <div class="flex items-center gap-3 p-2 text-gray-600">
+        <i data-lucide="shield-check" class="w-5 h-5 shrink-0"></i>
+        <span class="text-xs whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 delay-75">127.0.0.1 only</span>
       </div>
-    </section>
+    </nav>
+  </aside>
+
+  <!-- Main -->
+  <main class="pl-14 pt-14 h-screen overflow-hidden">
+    <div class="h-full overflow-y-auto">
+      <div class="px-6 py-6 max-w-6xl mx-auto flex flex-col gap-6">
+
+        <section id="cards" class="grid gap-6 [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]"></section>
+
+        <section class="glass-panel rounded-2xl p-4">
+          <div class="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-3">Add account</div>
+          <form id="add-form" class="flex flex-wrap gap-3">
+            <input id="add-label" placeholder="label, e.g. personal" autocomplete="off" spellcheck="false"
+                   pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,31}" required
+                   class="flex-1 min-w-56 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#F99C24] focus:border-transparent transition-all">
+            <button type="submit"
+              class="inline-flex items-center gap-2 bg-gradient-to-r from-[#F3EB35] to-[#F99C24] hover:opacity-90 text-black font-bold text-sm rounded-xl px-5 py-3 shadow-lg shadow-[#F99C24]/20 active:scale-[0.98] transition-all">
+              <i data-lucide="user-plus" class="w-4 h-4"></i>Create &amp; sign in
+            </button>
+          </form>
+          <p class="text-xs text-gray-500 mt-3 leading-relaxed">
+            Creates an isolated <span class="font-mono text-gray-400">CLAUDE_CONFIG_DIR</span> under
+            <span class="font-mono text-gray-400">accounts/&lt;label&gt;</span> and signs it in. Onboarding is driven
+            automatically — your browser opens the Claude sign-in page right away. Tokens stay in that config dir /
+            your OS keychain; this tool never sees them.
+          </p>
+        </section>
+
+        <p class="text-xs text-gray-600 text-center pb-4">
+          local-only tool · drives the real <span class="font-mono">claude</span> CLI · <span class="font-mono">/usage</span>
+          parsing may break across Claude Code versions — raw output is always available per card
+        </p>
+      </div>
+    </div>
   </main>
 
-  <footer>
-    local-only tool · binds 127.0.0.1 · drives the real <code>claude</code> CLI, parsing of <code>/usage</code> may break
-    across Claude Code versions — raw output is always available per card
-  </footer>
+  <!-- Login modal -->
+  <div id="login-modal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-md hidden items-center justify-center p-6">
+    <div class="glass rounded-3xl shadow-2xl shadow-black/50 p-8 w-full max-w-md relative">
+      <button id="modal-close" class="absolute top-4 right-4 p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+      <div class="w-16 h-16 bg-gradient-to-br from-[#F3EB35] to-[#F99C24] rounded-2xl shadow-lg shadow-[#F99C24]/20 flex items-center justify-center mb-5">
+        <i data-lucide="key-round" class="w-8 h-8 text-black"></i>
+      </div>
+      <h2 class="text-2xl font-bold mb-1">Sign in to Claude</h2>
+      <p class="text-sm text-gray-400 mb-6">account <span id="modal-label" class="text-system-blue font-semibold"></span></p>
 
+      <div id="modal-progress">
+        <div class="flex items-center gap-3 text-sm text-gray-300">
+          <span class="w-4 h-4 border-2 border-system-blue border-t-transparent rounded-full animate-spin shrink-0"></span>
+          <span id="modal-status">starting claude…</span>
+        </div>
+        <div id="modal-urls" class="mt-5 hidden">
+          <div class="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Browser didn’t open?</div>
+          <div id="modal-url-list" class="flex flex-col gap-2"></div>
+        </div>
+        <p class="text-xs text-gray-600 mt-6 leading-relaxed">
+          Theme and sign-in method are chosen automatically. Finish signing in in the browser — this window closes by
+          itself once the account is authenticated.
+        </p>
+      </div>
+
+      <div id="modal-success" class="hidden">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-full bg-system-green/15 border border-system-green/30 flex items-center justify-center shrink-0">
+            <i data-lucide="check" class="w-6 h-6 text-system-green"></i>
+          </div>
+          <div>
+            <div class="font-semibold text-system-green">Signed in</div>
+            <div id="modal-success-email" class="text-sm text-gray-400"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/lucide@0.554.0/dist/umd/lucide.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,13 +1,21 @@
 import type { AccountConfig, UsageResult, UsageRun } from './types.js';
 import { spawnClaude } from './session.js';
-import { cleanCapture, parseUsage, looksLoggedOut } from './parse.js';
+import { cleanCapture, parseUsage, looksLoggedOut, TRUST_PROMPT_RE } from './parse.js';
 
 const READY_TIMEOUT_MS = 25_000;
 /** Hard cap on how long we wait for the /usage panel after sending the command. */
 const PANEL_CAP_MS = 30_000;
-/** Panel considered fully rendered once output has been idle this long… */
+/** With a complete panel (session + weekly), this much silence = fully rendered. */
 const PANEL_IDLE_MS = 800;
-/** …but never declare done before this much time has passed (panel data loads async). */
+/** With only partial sections painted, wait longer — the rest may still be coming. */
+const PANEL_PARTIAL_IDLE_MS = 3_000;
+/**
+ * Without sections at all, wait far longer through silence — the panel loads
+ * its data async and can sit quietly on "Loading usage data…" when several
+ * accounts are checked in parallel. Only give up after this much dead air.
+ */
+const PANEL_NO_DATA_IDLE_MS = 6_000;
+/** Never declare done before this much time has passed. */
 const PANEL_MIN_MS = 2_000;
 const RAW_TAIL_CHARS = 8_000;
 
@@ -58,7 +66,7 @@ export async function runUsageOnce(configDir: string | null, ev: UsageEvents = {
       if (looksLoggedOut(clean)) throw new Error('not logged in');
       // whitespace-insensitive: repaints may drop spaces once ANSI is stripped
       if (/\?\s*for\s*shortcuts/.test(clean)) return;
-      if (!trustAccepted && /do\s*you\s*trust/i.test(clean)) {
+      if (!trustAccepted && TRUST_PROMPT_RE.test(clean)) {
         // First run in our empty scratch dir — accept the folder-trust prompt.
         trustAccepted = true;
         await sleep(300);
@@ -69,7 +77,7 @@ export async function runUsageOnce(configDir: string | null, ev: UsageEvents = {
     throw new Error('timed out waiting for the claude REPL prompt');
   }
 
-  async function captureUntilIdle(): Promise<void> {
+  async function captureUntilSettled(): Promise<void> {
     const start = Date.now();
     let lastLen = buf.length;
     let lastChange = Date.now();
@@ -80,8 +88,16 @@ export async function runUsageOnce(configDir: string | null, ev: UsageEvents = {
         lastChange = Date.now();
       }
       const elapsed = Date.now() - start;
+      const idle = Date.now() - lastChange;
       if (elapsed >= PANEL_CAP_MS) return;
-      if (elapsed >= PANEL_MIN_MS && Date.now() - lastChange >= PANEL_IDLE_MS) return;
+      if (elapsed < PANEL_MIN_MS) continue;
+      // Content-aware completion: the more complete the panel, the shorter
+      // the settle. Sections can paint across several frames (session first,
+      // weekly later), so a partial panel gets extra time to fill in.
+      const parsed = parseUsage(cleanCapture(buf));
+      if (parsed.confidence === 'high' && idle >= PANEL_IDLE_MS) return;
+      if (parsed.sections.length > 0 && idle >= PANEL_PARTIAL_IDLE_MS) return;
+      if (idle >= PANEL_NO_DATA_IDLE_MS) return;
     }
   }
 
@@ -93,7 +109,7 @@ export async function runUsageOnce(configDir: string | null, ev: UsageEvents = {
     await sleep(400); // let the slash-command autocomplete settle before Enter
     term.write('\r');
     ev.onPhase?.('capturing panel');
-    await captureUntilIdle();
+    await captureUntilSettled();
     const raw = cleanCapture(buf);
     const parsed = parseUsage(raw);
     const ok = parsed.sections.length > 0;

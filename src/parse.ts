@@ -92,6 +92,15 @@ export function parseUsage(clean: string): ParsedUsage {
 }
 
 /**
+ * The folder-trust dialog, across claude versions: older builds ask
+ * "Do you trust the files in this folder?", 2.1.x asks "Quick safety check:
+ * Is this a project you created or one you trust?" with a "Yes, I trust this
+ * folder" option. Whitespace-insensitive — repaints can drop spaces.
+ */
+export const TRUST_PROMPT_RE =
+  /(do\s*you\s*trust|trust\s*the\s*files|trust\s*this\s*folder|quick\s*safety\s*check)/i;
+
+/**
  * True when the capture looks like a login / first-run onboarding screen
  * rather than a usable REPL — i.e. this config dir has no signed-in account.
  * TUI repaints can drop the spaces between words once cursor-positioning
