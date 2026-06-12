@@ -61,15 +61,16 @@ app.get('/api/accounts', (_req, res) => {
 });
 
 app.post('/api/accounts', (req, res) => {
-  const label = String(req.body?.label ?? '').trim();
-  if (!isValidLabel(label)) {
+  // Label is optional — the UI sends none and we mint a random handle.
+  const raw = typeof req.body?.label === 'string' ? req.body.label.trim() : '';
+  if (raw && !isValidLabel(raw)) {
     res.status(400).json({ error: 'label must be 1–32 chars: letters, digits, dot, dash, underscore' });
     return;
   }
   try {
-    const acc = addAccount(label);
+    const acc = addAccount(raw || undefined);
     logins.start(acc.label, acc.configDir);
-    res.status(201).json({ account: statusOf(label) });
+    res.status(201).json({ account: statusOf(acc.label) });
   } catch (err) {
     res.status(409).json({ error: errMsg(err) });
   }

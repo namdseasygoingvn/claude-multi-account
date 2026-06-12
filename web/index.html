@@ -53,18 +53,27 @@
     <h1 class="text-lg font-semibold whitespace-nowrap">Claude Quota Monitor</h1>
     <span id="status" class="text-sm text-gray-500 truncate"></span>
     <div class="flex-1"></div>
+
+    <!-- Auto-refresh: checkbox on/off + minutes field -->
     <div class="hidden sm:flex items-center gap-2">
-      <span class="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Auto</span>
-      <div id="auto-seg" class="flex bg-system-gray5/50 p-1 rounded-lg">
-        <button data-mins="0"  class="px-2.5 py-1 text-xs rounded-[6px] transition-colors">Off</button>
-        <button data-mins="5"  class="px-2.5 py-1 text-xs rounded-[6px] transition-colors">5m</button>
-        <button data-mins="15" class="px-2.5 py-1 text-xs rounded-[6px] transition-colors">15m</button>
-        <button data-mins="30" class="px-2.5 py-1 text-xs rounded-[6px] transition-colors">30m</button>
+      <label class="flex items-center gap-2 cursor-pointer select-none">
+        <input type="checkbox" id="auto-toggle" class="w-4 h-4 accent-system-blue">
+        <span class="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Auto</span>
+      </label>
+      <div id="auto-interval-wrap" class="flex items-center gap-1.5 opacity-40 pointer-events-none transition-opacity">
+        <input type="text" id="auto-mins" inputmode="numeric" value="15" aria-label="auto-refresh minutes"
+               class="w-12 bg-white/5 border border-white/10 rounded-lg text-sm text-white text-center px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#F99C24] focus:border-transparent transition-all">
+        <span class="text-xs text-gray-500">min</span>
       </div>
     </div>
+
     <button id="check-btn"
       class="inline-flex items-center gap-2 bg-gradient-to-r from-[#F3EB35] to-[#F99C24] hover:opacity-90 text-black font-bold text-sm rounded-xl px-4 py-2 shadow-lg shadow-[#F99C24]/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed">
       <i data-lucide="refresh-cw" class="w-4 h-4"></i><span id="check-btn-text">Check usage</span>
+    </button>
+    <button id="add-btn"
+      class="inline-flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white text-sm font-medium rounded-xl px-4 py-2 transition-colors">
+      <i data-lucide="user-plus" class="w-4 h-4"></i>Add account
     </button>
   </header>
 
@@ -80,44 +89,14 @@
         <i data-lucide="github" class="w-5 h-5 shrink-0"></i>
         <span class="text-sm whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 delay-75">Repository</span>
       </a>
-      <div class="flex-1"></div>
-      <div class="flex items-center gap-3 p-2 text-gray-600">
-        <i data-lucide="shield-check" class="w-5 h-5 shrink-0"></i>
-        <span class="text-xs whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 delay-75">127.0.0.1 only</span>
-      </div>
     </nav>
   </aside>
 
   <!-- Main -->
   <main class="pl-14 pt-14 h-screen overflow-hidden">
     <div class="h-full overflow-y-auto">
-      <div class="px-6 py-6 max-w-6xl mx-auto flex flex-col gap-6">
-
+      <div class="px-6 py-6 max-w-6xl mx-auto">
         <section id="cards" class="grid gap-6 [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]"></section>
-
-        <section class="glass-panel rounded-2xl p-4">
-          <div class="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-3">Add account</div>
-          <form id="add-form" class="flex flex-wrap gap-3">
-            <input id="add-label" placeholder="label, e.g. personal" autocomplete="off" spellcheck="false"
-                   pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,31}" required
-                   class="flex-1 min-w-56 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#F99C24] focus:border-transparent transition-all">
-            <button type="submit"
-              class="inline-flex items-center gap-2 bg-gradient-to-r from-[#F3EB35] to-[#F99C24] hover:opacity-90 text-black font-bold text-sm rounded-xl px-5 py-3 shadow-lg shadow-[#F99C24]/20 active:scale-[0.98] transition-all">
-              <i data-lucide="user-plus" class="w-4 h-4"></i>Create &amp; sign in
-            </button>
-          </form>
-          <p class="text-xs text-gray-500 mt-3 leading-relaxed">
-            Creates an isolated <span class="font-mono text-gray-400">CLAUDE_CONFIG_DIR</span> under
-            <span class="font-mono text-gray-400">accounts/&lt;label&gt;</span> and signs it in. Onboarding is driven
-            automatically — your browser opens the Claude sign-in page right away. Tokens stay in that config dir /
-            your OS keychain; this tool never sees them.
-          </p>
-        </section>
-
-        <p class="text-xs text-gray-600 text-center pb-4">
-          local-only tool · drives the real <span class="font-mono">claude</span> CLI · <span class="font-mono">/usage</span>
-          parsing may break across Claude Code versions — raw output is always available per card
-        </p>
       </div>
     </div>
   </main>
@@ -132,7 +111,7 @@
         <i data-lucide="key-round" class="w-8 h-8 text-black"></i>
       </div>
       <h2 class="text-2xl font-bold mb-1">Sign in to Claude</h2>
-      <p class="text-sm text-gray-400 mb-6">account <span id="modal-label" class="text-system-blue font-semibold"></span></p>
+      <p id="modal-sub" class="text-sm text-gray-400 mb-6">Adding a new account</p>
 
       <div id="modal-progress">
         <div class="flex items-center gap-3 text-sm text-gray-300">

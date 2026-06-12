@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,17 +39,31 @@ export function getAccount(label: string): AccountConfig | undefined {
   return loadRegistry().find((a) => a.label === label);
 }
 
-export function addAccount(label: string, configDir?: string): AccountConfig {
-  if (!isValidLabel(label)) {
-    throw new Error('label must be 1–32 chars: letters, digits, dot, dash, underscore');
-  }
+/** Random, filesystem-safe internal handle for an account (UI shows the email, not this). */
+function randomLabel(): string {
+  return 'acct-' + crypto.randomBytes(4).toString('hex');
+}
+
+/** Pass a label to use it, or omit to auto-generate a random one. */
+export function addAccount(label?: string, configDir?: string): AccountConfig {
   const accounts = loadRegistry();
-  if (accounts.some((a) => a.label === label)) {
-    throw new Error(`account "${label}" already exists`);
+  let finalLabel: string;
+  if (label && label.length > 0) {
+    if (!isValidLabel(label)) {
+      throw new Error('label must be 1–32 chars: letters, digits, dot, dash, underscore');
+    }
+    if (accounts.some((a) => a.label === label)) {
+      throw new Error(`account "${label}" already exists`);
+    }
+    finalLabel = label;
+  } else {
+    do {
+      finalLabel = randomLabel();
+    } while (accounts.some((a) => a.label === finalLabel));
   }
-  const dir = configDir ?? path.join(ACCOUNTS_DIR, label);
+  const dir = configDir ?? path.join(ACCOUNTS_DIR, finalLabel);
   fs.mkdirSync(dir, { recursive: true });
-  const acc: AccountConfig = { label, configDir: dir };
+  const acc: AccountConfig = { label: finalLabel, configDir: dir };
   accounts.push(acc);
   saveRegistry(accounts);
   return acc;

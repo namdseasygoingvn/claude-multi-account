@@ -11,7 +11,6 @@ const state = {
   loginDone: false,
   checking: false,
   autoTimer: null,
-  autoMins: 0,
 };
 
 async function api(path, opts = {}) {
@@ -62,9 +61,8 @@ function metricHtml(name, pct, resetsAt) {
 function badgeHtml(acc) {
   if (acc.loggedIn) {
     return `
-      <span class="inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded-lg bg-system-green/10 border border-system-green/20 text-system-green max-w-44">
-        <span class="w-1.5 h-1.5 rounded-full bg-system-green shrink-0"></span>
-        <span class="truncate normal-case font-medium">${esc(acc.email || 'signed in')}</span>
+      <span class="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg bg-system-green/10 border border-system-green/20 text-system-green">
+        <span class="w-1.5 h-1.5 rounded-full bg-system-green"></span>signed in
       </span>`;
   }
   return `
@@ -76,6 +74,7 @@ function badgeHtml(acc) {
 function cardHtml(acc) {
   const r = state.results.get(acc.label);
   const phase = state.phases.get(acc.label);
+  const title = acc.email || (acc.loginActive ? 'Signing in…' : 'New account');
 
   let body = '';
   if (phase) {
@@ -122,11 +121,10 @@ function cardHtml(acc) {
   return `
     <article class="glass-panel rounded-2xl p-4 ${state.activeLogin === acc.label && !state.loginDone ? 'ring-1 ring-system-blue/50' : ''}">
       <div class="flex items-center gap-2">
-        <h3 class="text-lg font-semibold flex-1 truncate">${esc(acc.label)}</h3>
+        <h3 class="text-lg font-semibold flex-1 truncate" title="${esc(title)}">${esc(title)}</h3>
         ${badgeHtml(acc)}
         ${signinBtn}
       </div>
-      <div class="font-mono text-xs text-gray-600 truncate mt-1" title="${esc(acc.configDir)}">${esc(acc.configDir)}</div>
       ${body}
     </article>`;
 }
@@ -141,7 +139,7 @@ function renderCards() {
         </div>
         <div>
           <div class="text-lg font-semibold">No accounts yet</div>
-          <div class="text-sm text-gray-500">Add your first account below.</div>
+          <div class="text-sm text-gray-500">Click <span class="text-gray-300 font-medium">Add account</span> in the top-right to get started.</div>
         </div>
       </div>`;
   } else {
@@ -178,7 +176,7 @@ async function checkUsage() {
   try {
     const data = await api('/api/usage/check', { method: 'POST', body: {} });
     for (const r of data.results) state.results.set(r.label, r);
-    if (data.results.length === 0) setStatus('no accounts registered');
+    if (data.results.length === 0) setStatus('no accounts yet');
   } catch (err) {
     setStatus(`check failed: ${err.message}`);
   } finally {
@@ -186,6 +184,16 @@ async function checkUsage() {
     state.phases.clear();
     updateToolbar();
     renderCards();
+  }
+}
+
+async function addAccount() {
+  try {
+    const data = await api('/api/accounts', { method: 'POST', body: {} });
+    await loadAccounts();
+    openLogin(data.account.label);
+  } catch (err) {
+    setStatus(`add failed: ${err.message}`);
   }
 }
 
@@ -204,7 +212,8 @@ async function openLogin(label) {
   state.activeLogin = label;
   state.loginDone = false;
   state.urls.set(label, []);
-  $('#modal-label').textContent = label;
+  const acc = state.accounts.find((a) => a.label === label);
+  $('#modal-sub').textContent = acc && acc.email ? acc.email : 'Adding a new account';
   $('#modal-progress').classList.remove('hidden');
   $('#modal-success').classList.add('hidden');
   $('#modal-urls').classList.add('hidden');
@@ -313,23 +322,30 @@ function handleWs(m) {
   }
 }
 
+// ───────────────────────── auto-refresh ─────────────────────────
+
+function applyAuto() {
+  if (state.autoTimer) {
+    clearInterval(state.autoTimer);
+    state.autoTimer = null;
+  }
+  const on = $('#auto-toggle').checked;
+  const wrap = $('#auto-interval-wrap');
+  wrap.classList.toggle('opacity-40', !on);
+  wrap.classList.toggle('pointer-events-none', !on);
+  if (on) {
+    const mins = Math.max(1, parseInt($('#auto-mins').value, 10) || 15);
+    state.autoTimer = setInterval(checkUsage, mins * 60_000);
+    setStatus(`auto-refresh every ${mins} min`);
+  } else {
+    setStatus('');
+  }
+}
+
 // ───────────────────────── wiring ─────────────────────────
 
 $('#check-btn').addEventListener('click', checkUsage);
-
-$('#add-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const label = $('#add-label').value.trim();
-  if (!label) return;
-  try {
-    await api('/api/accounts', { method: 'POST', body: { label } });
-    $('#add-label').value = '';
-    await loadAccounts();
-    openLogin(label);
-  } catch (err) {
-    setStatus(`add failed: ${err.message}`);
-  }
-});
+$('#add-btn').addEventListener('click', addAccount);
 
 $('#modal-close').addEventListener('click', () => {
   showModal(false);
@@ -337,31 +353,14 @@ $('#modal-close').addEventListener('click', () => {
   renderCards();
 });
 
-function renderAutoSeg() {
-  for (const btn of $('#auto-seg').querySelectorAll('button')) {
-    const active = Number(btn.dataset.mins) === state.autoMins;
-    btn.className = active
-      ? 'px-2.5 py-1 text-xs rounded-[6px] bg-system-gray3 text-white shadow-sm ring-1 ring-white/5 transition-colors'
-      : 'px-2.5 py-1 text-xs rounded-[6px] text-gray-400 hover:text-white transition-colors';
-  }
-}
-
-$('#auto-seg').addEventListener('click', (e) => {
-  const btn = e.target.closest('button');
-  if (!btn) return;
-  state.autoMins = Number(btn.dataset.mins);
-  renderAutoSeg();
-  if (state.autoTimer) clearInterval(state.autoTimer);
-  state.autoTimer = null;
-  if (state.autoMins > 0) {
-    state.autoTimer = setInterval(checkUsage, state.autoMins * 60_000);
-    setStatus(`auto-refresh every ${state.autoMins} min`);
-  } else {
-    setStatus('');
-  }
+$('#auto-toggle').addEventListener('change', applyAuto);
+$('#auto-mins').addEventListener('input', (e) => {
+  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 3);
+});
+$('#auto-mins').addEventListener('change', () => {
+  if ($('#auto-toggle').checked) applyAuto();
 });
 
-renderAutoSeg();
 refreshIcons();
 connectWs();
 loadAccounts();
