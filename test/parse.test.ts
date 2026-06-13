@@ -3,7 +3,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { cleanCapture, parseUsage, looksLoggedOut, TRUST_PROMPT_RE } from '../src/parse.js';
+import {
+  cleanCapture,
+  parseUsage,
+  looksLoggedOut,
+  TRUST_PROMPT_RE,
+  THEME_PROMPT_RE,
+  CONTINUE_PROMPT_RE,
+} from '../src/parse.js';
 
 const fixturesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const fixture = (name: string) => fs.readFileSync(path.join(fixturesDir, name), 'utf8');
@@ -97,14 +104,28 @@ test('cleanCapture + parseUsage work together on a synthetic PTY stream', () => 
   assert.equal(parsed.confidence, 'high');
 });
 
-test('detects login/onboarding screens', () => {
+test('detects genuine logged-out screens', () => {
   assert.ok(looksLoggedOut('Select login method\n1. Claude account with subscription'));
-  assert.ok(looksLoggedOut('Choose the text style that looks best with your terminal'));
   assert.ok(looksLoggedOut('Paste code here if prompted:'));
   // repaints can drop spaces entirely once cursor-positioning is stripped
-  assert.ok(looksLoggedOut('Choosethetextstylethatlooksbestwithyourterminal'));
   assert.ok(looksLoggedOut('Selectloginmethod'));
   assert.ok(!looksLoggedOut(fixture('usage-panel-sonnet.txt')));
+});
+
+test('the theme picker is NOT treated as logged out', () => {
+  // A signed-in but un-onboarded config dir reopens at the theme picker. That
+  // is an onboarding screen to click through, not proof of being logged out —
+  // keying off it produced false "not logged in" results.
+  assert.ok(!looksLoggedOut('Choose the text style that looks best with your terminal'));
+  assert.ok(!looksLoggedOut('Choosethetextstylethatlooksbestwithyourterminal'));
+  // …but it IS recognized as an onboarding screen the flows answer with Enter.
+  assert.ok(THEME_PROMPT_RE.test('Choose the text style that looks best with your terminal'));
+  assert.ok(THEME_PROMPT_RE.test('Choosethetextstylethatlooksbestwithyourterminal'));
+});
+
+test('detects the "press Enter to continue" interstitial', () => {
+  assert.ok(CONTINUE_PROMPT_RE.test('Press Enter to continue'));
+  assert.ok(CONTINUE_PROMPT_RE.test('PressEntertocontinue'));
 });
 
 test('detects the folder-trust dialog across claude versions', () => {

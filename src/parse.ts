@@ -101,13 +101,28 @@ export const TRUST_PROMPT_RE =
   /(do\s*you\s*trust|trust\s*the\s*files|trust\s*this\s*folder|quick\s*safety\s*check)/i;
 
 /**
- * True when the capture looks like a login / first-run onboarding screen
- * rather than a usable REPL — i.e. this config dir has no signed-in account.
- * TUI repaints can drop the spaces between words once cursor-positioning
- * escapes are stripped, so the patterns are whitespace-insensitive.
+ * First-run theme picker. NOT a logout signal: a *signed-in* account whose
+ * config dir hasn't finished onboarding (e.g. a login session killed before
+ * it persisted) shows this too. Both the login and usage flows answer it with
+ * Enter rather than treating it as logged out. Whitespace-insensitive.
+ */
+export const THEME_PROMPT_RE = /Choose\s*the\s*text\s*style/i;
+/** "Press Enter to continue" interstitial — can recur across onboarding. */
+export const CONTINUE_PROMPT_RE = /Press\s*Enter\s*to\s*continue/i;
+
+/**
+ * True when the capture shows a genuine login screen — claude has no usable
+ * token for this config dir. The theme picker is deliberately excluded (see
+ * THEME_PROMPT_RE): it also appears for a signed-in-but-un-onboarded account,
+ * so keying off it produced false "not logged in" results. A real login screen
+ * is the ground truth here — it reflects whether claude can actually
+ * authenticate — whereas probeLogin()'s persisted oauthAccount block is only
+ * metadata and can linger after the keychain token is gone. TUI repaints can
+ * drop the spaces between words once cursor-positioning escapes are stripped,
+ * so patterns are whitespace-insensitive.
  */
 export function looksLoggedOut(clean: string): boolean {
-  return /(Select\s*login\s*method|Choose\s*the\s*text\s*style|Paste\s*code\s*here|Sign\s*in\s*to\s*Claude|\/login\b.*to sign in)/i.test(
+  return /(Select\s*login\s*method|Paste\s*code\s*here|Sign\s*in\s*to\s*Claude|\/login\b.*to sign in)/i.test(
     clean,
   );
 }

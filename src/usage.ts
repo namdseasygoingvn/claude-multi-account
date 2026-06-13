@@ -1,6 +1,14 @@
 import type { AccountConfig, UsageResult, UsageRun } from './types.js';
 import { spawnClaude } from './session.js';
-import { cleanCapture, parseUsage, looksLoggedOut, TRUST_PROMPT_RE } from './parse.js';
+import {
+  cleanCapture,
+  parseUsage,
+  looksLoggedOut,
+  TRUST_PROMPT_RE,
+  THEME_PROMPT_RE,
+  CONTINUE_PROMPT_RE,
+} from './parse.js';
+import { probeLogin } from './registry.js';
 
 const READY_TIMEOUT_MS = 25_000;
 /** Hard cap on how long we wait for the /usage panel after sending the command. */
@@ -60,17 +68,34 @@ export async function runUsageOnce(configDir: string | null, ev: UsageEvents = {
 
   async function waitForReady(): Promise<void> {
     const deadline = Date.now() + READY_TIMEOUT_MS;
-    let trustAccepted = false;
+    // Onboarding screens a *signed-in* account still clicks through on a fresh
+    // config dir: the theme picker (when a login session was killed before it
+    // persisted the choice), the folder-trust dialog for our scratch cwd, and
+    // any "press Enter to continue" interstitial. Each is answered once with
+    // Enter ("continue" can recur). We deliberately do NOT answer "Select login
+    // method" — that screen only appears with no credentials, i.e. truly logged
+    // out — so looksLoggedOut() still catches it and we bail.
+    const onboarding: Array<{ re: RegExp; repeatable?: boolean }> = [
+      { re: THEME_PROMPT_RE },
+      { re: TRUST_PROMPT_RE },
+      { re: CONTINUE_PROMPT_RE, repeatable: true },
+    ];
+    const answered = new Set<RegExp>();
+    let cursor = 0; // offset into the cleaned text already consumed by an answer
     while (Date.now() < deadline) {
       const clean = cleanCapture(buf);
-      if (looksLoggedOut(clean)) throw new Error('not logged in');
       // whitespace-insensitive: repaints may drop spaces once ANSI is stripped
       if (/\?\s*for\s*shortcuts/.test(clean)) return;
-      if (!trustAccepted && TRUST_PROMPT_RE.test(clean)) {
-        // First run in our empty scratch dir — accept the folder-trust prompt.
-        trustAccepted = true;
-        await sleep(300);
+      if (looksLoggedOut(clean)) throw new Error('not logged in');
+      const fresh = clean.slice(cursor);
+      for (const screen of onboarding) {
+        if (!screen.repeatable && answered.has(screen.re)) continue;
+        if (!screen.re.test(fresh)) continue;
+        answered.add(screen.re);
+        cursor = clean.length;
+        await sleep(300); // let the menu finish painting before we commit
         term.write('\r');
+        break; // one keystroke per pass; the next screen comes on a later pass
       }
       await sleep(150);
     }
@@ -123,10 +148,18 @@ export async function runUsageOnce(configDir: string | null, ev: UsageEvents = {
     };
   } catch (err) {
     const raw = cleanCapture(buf);
+    // claude's own screen is authoritative. If it reaches a real "Select login
+    // method" / sign-in prompt, the credential for this config dir is missing
+    // or expired and a re-login is genuinely needed — report that even when
+    // stale oauthAccount metadata still lingers in .claude.json (probeLogin
+    // keys off that metadata, not the live token in the keychain). probeLogin
+    // is only the tie-breaker when no login screen was captured (e.g. an
+    // ambiguous timeout), so a working account isn't mislabeled "logged out".
     const loggedOut = looksLoggedOut(raw);
+    const signedIn = !loggedOut && configDir ? probeLogin({ label: '', configDir }).loggedIn : false;
     return {
       ok: false,
-      loggedIn: loggedOut ? false : null,
+      loggedIn: loggedOut ? false : signedIn ? true : null,
       parsed: null,
       raw: raw.slice(-RAW_TAIL_CHARS),
       error: loggedOut ? 'not logged in — open the login panel for this account first' : msg(err),

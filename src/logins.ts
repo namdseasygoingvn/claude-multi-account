@@ -1,5 +1,5 @@
 import { spawnClaude } from './session.js';
-import { cleanCapture, TRUST_PROMPT_RE } from './parse.js';
+import { cleanCapture, TRUST_PROMPT_RE, THEME_PROMPT_RE, CONTINUE_PROMPT_RE } from './parse.js';
 import { probeLogin } from './registry.js';
 
 const SNAPSHOT_TAIL = 6_000;
@@ -40,10 +40,10 @@ interface AutoRule {
  * Patterns are whitespace-insensitive — TUI repaints can drop spaces.
  */
 const AUTO_RULES: AutoRule[] = [
-  { key: 'theme', re: /Choose\s*the\s*text\s*style/i, status: 'picking default theme' },
+  { key: 'theme', re: THEME_PROMPT_RE, status: 'picking default theme' },
   { key: 'method', re: /Select\s*login\s*method/i, status: 'choosing Claude subscription sign-in' },
   { key: 'trust', re: TRUST_PROMPT_RE, status: 'accepting folder trust' },
-  { key: 'continue', re: /Press\s*Enter\s*to\s*continue/i, status: 'continuing', repeatable: true },
+  { key: 'continue', re: CONTINUE_PROMPT_RE, status: 'continuing', repeatable: true },
 ];
 
 interface LoginSession {
@@ -130,6 +130,18 @@ export class LoginManager {
 
   stopAll(): void {
     for (const label of [...this.sessions.keys()]) this.stop(label);
+  }
+
+  /** Feed raw input to an account's live login PTY (e.g. a pasted OAuth code). */
+  write(label: string, data: string): boolean {
+    const sess = this.sessions.get(label);
+    if (!sess) return false;
+    try {
+      sess.term.write(data);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private clearTimers(sess: LoginSession): void {

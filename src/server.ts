@@ -15,16 +15,72 @@ import { checkUsage } from './usage.js';
 import type { AccountStatus } from './types.js';
 
 const PORT = Number(process.env.PORT || 3000);
-// Local only — this machine holds live OAuth state for every registered
-// account. Never bind this to a LAN/public interface.
-const HOST = '127.0.0.1';
+// Defaults to localhost-only (this machine holds live OAuth state for every
+// account). Set HOST=0.0.0.0 to bind all interfaces — required inside a
+// container / when hosting remotely, where you MUST also set APP_TOKEN.
+const HOST = process.env.HOST || '127.0.0.1';
+
+// Optional shared-secret gate. When APP_TOKEN is set, every HTTP request and
+// WebSocket upgrade must present it (via ?token=, a token cookie, or a
+// Bearer header). Unset = no auth (fine for 127.0.0.1). MUST be set whenever
+// HOST is not loopback — this tool exposes live account sessions.
+const APP_TOKEN = process.env.APP_TOKEN || '';
+if (APP_TOKEN === '' && HOST !== '127.0.0.1' && HOST !== 'localhost') {
+  console.warn(
+    `\n⚠  HOST=${HOST} exposes this server beyond localhost but APP_TOKEN is unset — ` +
+      `anyone reachable can control your account sessions. Set APP_TOKEN.\n`,
+  );
+}
+
+function parseCookies(header: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const part of (header ?? '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+
+function tokenFromReq(req: http.IncomingMessage): string | null {
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  const q = url.searchParams.get('token');
+  if (q) return q;
+  const cookie = parseCookies(req.headers.cookie)['token'];
+  if (cookie) return cookie;
+  const auth = req.headers.authorization;
+  if (auth?.startsWith('Bearer ')) return auth.slice(7);
+  return null;
+}
+
+function tokenOk(req: http.IncomingMessage): boolean {
+  return APP_TOKEN === '' || tokenFromReq(req) === APP_TOKEN;
+}
 
 const app = express();
+
+// Auth gate (no-op when APP_TOKEN is unset). A valid ?token= is promoted to a
+// long-lived cookie so the SPA's fetch() and the WS upgrade carry it onward.
+app.use((req, res, next) => {
+  if (APP_TOKEN === '') return next();
+  if (!tokenOk(req)) {
+    res.status(401).type('text/plain').send('unauthorized — open this URL once with ?token=YOUR_TOKEN');
+    return;
+  }
+  if (new URL(req.url, 'http://localhost').searchParams.get('token') === APP_TOKEN) {
+    res.setHeader('Set-Cookie', `token=${encodeURIComponent(APP_TOKEN)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`);
+  }
+  next();
+});
+
 app.use(express.json());
 app.use(express.static(path.join(PROJECT_ROOT, 'web')));
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({
+  server,
+  path: '/ws',
+  verifyClient: (info, cb) => cb(tokenOk(info.req)),
+});
 
 function broadcast(msg: unknown): void {
   const data = JSON.stringify(msg);
@@ -91,6 +147,24 @@ app.post('/api/accounts/:label/login', (req, res) => {
 app.post('/api/accounts/:label/login/stop', (req, res) => {
   const stopped = logins.stop(req.params.label);
   res.json({ stopped });
+});
+
+/**
+ * Submit the OAuth authorization code into a running login session. Needed
+ * for headless/remote hosting: the browser redirect can't reach the server's
+ * localhost callback, so Claude shows a code that the user pastes here.
+ */
+app.post('/api/accounts/:label/login/code', (req, res) => {
+  const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+  if (!code) {
+    res.status(400).json({ error: 'body must be { code: string }' });
+    return;
+  }
+  if (!logins.write(req.params.label, code + '\r')) {
+    res.status(409).json({ error: 'no active sign-in session for this account' });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 let checking = false;
