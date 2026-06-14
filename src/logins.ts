@@ -28,6 +28,8 @@ interface AutoRule {
   key: string;
   re: RegExp;
   status: string;
+  /** Keystrokes to send when this screen appears (default: Enter). */
+  send?: string;
   /** Screens that can appear more than once (e.g. "Press Enter to continue"). */
   repeatable?: boolean;
 }
@@ -44,6 +46,13 @@ const AUTO_RULES: AutoRule[] = [
   { key: 'method', re: /Select\s*login\s*method/i, status: 'choosing Claude subscription sign-in' },
   { key: 'trust', re: TRUST_PROMPT_RE, status: 'accepting folder trust' },
   { key: 'continue', re: CONTINUE_PROMPT_RE, status: 'continuing', repeatable: true },
+  // We pre-seed hasCompletedOnboarding so claude trusts a persisted token and
+  // lands in the REPL after sign-in. The side effect: a fresh, token-less
+  // account also skips the first-run login wizard and drops into the REPL
+  // showing "Not logged in · Run /login" — no OAuth picker. Kick sign-in off
+  // ourselves by running /login, which brings up "Select login method" (handled
+  // by the rule above). Without this, onboarding stalls here forever.
+  { key: 'login', re: /Run\s*\/login\b/i, status: 'opening sign-in', send: '/login\r' },
 ];
 
 interface LoginSession {
@@ -186,7 +195,7 @@ export class LoginManager {
       if (!sess.succeeded) this.events.onStatus(label, rule.status);
       sess.keyTimers.push(
         setTimeout(() => {
-          if (this.sessions.get(label) === sess) sess.term.write('\r');
+          if (this.sessions.get(label) === sess) sess.term.write(rule.send ?? '\r');
         }, AUTO_KEY_DELAY_MS),
       );
       break; // one keystroke per flush; the next screen is handled on the next flush
