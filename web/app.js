@@ -9,9 +9,16 @@ const state = {
   urls: new Map(), // label -> [oauth urls]
   activeLogin: null,
   loginDone: false,
-  checking: false,
+  checking: new Set(), // labels with an in-flight usage check
   autoTimer: null,
 };
+
+// The main "Check usage" button is busy only while every account is being
+// checked (i.e. a real "check all"). Reloading one of several accounts leaves
+// it — and the other cards' buttons — clickable.
+function mainBusy() {
+  return state.accounts.length > 0 && state.accounts.every((a) => state.checking.has(a.label));
+}
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -118,7 +125,7 @@ function cardHtml(acc) {
   const actions = `
     <div class="flex items-center gap-1.5 shrink-0">
       <button class="check-one-btn ${sq} bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-              data-label="${esc(acc.label)}" title="Check usage for this account" ${state.checking ? 'disabled' : ''}>
+              data-label="${esc(acc.label)}" title="Check usage for this account" ${state.checking.has(acc.label) ? 'disabled' : ''}>
         <i data-lucide="refresh-cw" class="w-4 h-4"></i>
       </button>
       <button class="login-btn ${sq} bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white"
@@ -170,8 +177,9 @@ function renderCards() {
 }
 
 function updateToolbar() {
-  $('#check-btn').disabled = state.checking;
-  $('#check-btn-text').textContent = state.checking ? 'Checking…' : 'Check usage';
+  const busy = mainBusy();
+  $('#check-btn').disabled = busy;
+  $('#check-btn-text').textContent = busy ? 'Checking…' : 'Check usage';
 }
 
 // ───────────────────────── accounts / usage ─────────────────────────
@@ -188,20 +196,30 @@ async function loadAccounts() {
 
 // labels omitted → check every account; pass [label] to check just one.
 async function runCheck(labels) {
-  if (state.checking) return;
-  state.checking = true;
-  updateToolbar();
+  const targets = labels && labels.length ? labels : state.accounts.map((a) => a.label);
+  // Skip accounts already mid-check; bail if there's nothing fresh to do.
+  const fresh = targets.filter((l) => !state.checking.has(l));
+  if (fresh.length === 0) return;
+  // Optimistically mark just these labels so their cards spin immediately
+  // without locking the other cards' buttons or the main button.
+  for (const l of fresh) {
+    state.checking.add(l);
+    state.phases.set(l, 'queued');
+  }
   setStatus('');
+  updateToolbar();
+  renderCards();
   try {
-    const body = labels && labels.length ? { labels } : {};
-    const data = await api('/api/usage/check', { method: 'POST', body });
+    const data = await api('/api/usage/check', { method: 'POST', body: { labels: fresh } });
     for (const r of data.results) state.results.set(r.label, r);
-    if (data.results.length === 0) setStatus('no accounts yet');
   } catch (err) {
     setStatus(`check failed: ${err.message}`);
   } finally {
-    state.checking = false;
-    state.phases.clear();
+    // Clear only the labels this call owns — concurrent checks manage theirs.
+    for (const l of fresh) {
+      state.checking.delete(l);
+      state.phases.delete(l);
+    }
     updateToolbar();
     renderCards();
   }
@@ -341,14 +359,18 @@ function handleWs(m) {
       renderCards();
       break;
     case 'check-start':
-      state.checking = true;
-      for (const l of m.labels) state.phases.set(l, 'queued');
+      for (const l of m.labels) {
+        state.checking.add(l);
+        state.phases.set(l, 'queued');
+      }
       updateToolbar();
       renderCards();
       break;
     case 'check-done':
-      state.checking = false;
-      state.phases.clear();
+      for (const l of m.labels) {
+        state.checking.delete(l);
+        state.phases.delete(l);
+      }
       updateToolbar();
       renderCards();
       loadAccounts(); // login status may have changed

@@ -179,22 +179,24 @@ app.post('/api/accounts/:label/login/code', (req, res) => {
   res.json({ ok: true });
 });
 
-let checking = false;
+// Labels with an in-flight usage check. Tracked per-account (not a single
+// global flag) so independent single-account reloads — and a "check all" that
+// overlaps them — run concurrently instead of blocking one another.
+const checking = new Set<string>();
 app.post('/api/usage/check', async (req, res) => {
-  if (checking) {
-    res.status(409).json({ error: 'a usage check is already running' });
-    return;
-  }
   const labels: unknown = req.body?.labels;
   const all = loadRegistry();
-  const targets =
+  const requested =
     Array.isArray(labels) && labels.length > 0 ? all.filter((a) => labels.includes(a.label)) : all;
+  // Skip accounts already being checked so we never double-spawn a PTY for one.
+  const targets = requested.filter((a) => !checking.has(a.label));
   if (targets.length === 0) {
     res.json({ results: [] });
     return;
   }
-  checking = true;
-  broadcast({ type: 'check-start', labels: targets.map((t) => t.label) });
+  const labelsRun = targets.map((t) => t.label);
+  for (const l of labelsRun) checking.add(l);
+  broadcast({ type: 'check-start', labels: labelsRun });
   try {
     // Fan out in parallel — one ephemeral claude PTY per account.
     const results = await Promise.all(
@@ -211,8 +213,8 @@ app.post('/api/usage/check', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: errMsg(err) });
   } finally {
-    checking = false;
-    broadcast({ type: 'check-done' });
+    for (const l of labelsRun) checking.delete(l);
+    broadcast({ type: 'check-done', labels: labelsRun });
   }
 });
 
