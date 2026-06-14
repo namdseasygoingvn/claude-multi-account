@@ -112,17 +112,30 @@ function cardHtml(acc) {
     body += `<div class="text-sm text-gray-600 mt-3">no check yet</div>`;
   }
 
-  const signinBtn = `
-    <button class="login-btn inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-400 hover:text-white transition-colors"
-            data-label="${esc(acc.label)}" title="Sign in this account">
-      <i data-lucide="log-in" class="w-3.5 h-3.5"></i>${acc.loggedIn ? '' : 'Sign in'}
-    </button>`;
+  // Square (1:1) icon buttons: check this account, sign in, delete.
+  const sq =
+    'w-8 h-8 inline-flex items-center justify-center shrink-0 rounded-lg border border-white/10 transition-colors';
+  const actions = `
+    <div class="flex items-center gap-1.5 shrink-0">
+      <button class="check-one-btn ${sq} bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+              data-label="${esc(acc.label)}" title="Check usage for this account" ${state.checking ? 'disabled' : ''}>
+        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+      </button>
+      <button class="login-btn ${sq} bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white"
+              data-label="${esc(acc.label)}" title="Sign in this account">
+        <i data-lucide="log-in" class="w-4 h-4"></i>
+      </button>
+      <button class="delete-btn ${sq} bg-white/5 hover:bg-red-500/15 hover:border-red-500/30 text-gray-400 hover:text-red-400"
+              data-label="${esc(acc.label)}" title="Delete account">
+        <i data-lucide="trash-2" class="w-4 h-4"></i>
+      </button>
+    </div>`;
 
   return `
     <article class="glass-panel rounded-2xl p-4 ${state.activeLogin === acc.label && !state.loginDone ? 'ring-1 ring-system-blue/50' : ''}">
       <div class="flex items-center gap-2">
         <div class="flex-1 min-w-0">${badgeHtml(acc)}</div>
-        ${signinBtn}
+        ${actions}
       </div>
       ${body}
     </article>`;
@@ -147,6 +160,12 @@ function renderCards() {
   for (const btn of el.querySelectorAll('.login-btn')) {
     btn.addEventListener('click', () => openLogin(btn.dataset.label));
   }
+  for (const btn of el.querySelectorAll('.check-one-btn')) {
+    btn.addEventListener('click', () => runCheck([btn.dataset.label]));
+  }
+  for (const btn of el.querySelectorAll('.delete-btn')) {
+    btn.addEventListener('click', () => deleteAccount(btn.dataset.label));
+  }
   refreshIcons();
 }
 
@@ -167,13 +186,15 @@ async function loadAccounts() {
   }
 }
 
-async function checkUsage() {
+// labels omitted → check every account; pass [label] to check just one.
+async function runCheck(labels) {
   if (state.checking) return;
   state.checking = true;
   updateToolbar();
   setStatus('');
   try {
-    const data = await api('/api/usage/check', { method: 'POST', body: {} });
+    const body = labels && labels.length ? { labels } : {};
+    const data = await api('/api/usage/check', { method: 'POST', body });
     for (const r of data.results) state.results.set(r.label, r);
     if (data.results.length === 0) setStatus('no accounts yet');
   } catch (err) {
@@ -183,6 +204,20 @@ async function checkUsage() {
     state.phases.clear();
     updateToolbar();
     renderCards();
+  }
+}
+
+async function deleteAccount(label) {
+  const acc = state.accounts.find((a) => a.label === label);
+  const name = (acc && acc.email) || label;
+  if (!confirm(`Delete account "${name}"?\nThis removes it from the monitor and deletes its local session.`)) return;
+  try {
+    await api(`/api/accounts/${encodeURIComponent(label)}`, { method: 'DELETE' });
+    state.results.delete(label);
+    state.phases.delete(label);
+    await loadAccounts();
+  } catch (err) {
+    setStatus(`delete failed: ${err.message}`);
   }
 }
 
@@ -334,7 +369,7 @@ function applyAuto() {
   wrap.classList.toggle('pointer-events-none', !on);
   if (on) {
     const mins = Math.max(1, parseInt($('#auto-mins').value, 10) || 15);
-    state.autoTimer = setInterval(checkUsage, mins * 60_000);
+    state.autoTimer = setInterval(() => runCheck(), mins * 60_000);
     setStatus(`auto-refresh every ${mins} min`);
   } else {
     setStatus('');
@@ -343,7 +378,7 @@ function applyAuto() {
 
 // ───────────────────────── wiring ─────────────────────────
 
-$('#check-btn').addEventListener('click', checkUsage);
+$('#check-btn').addEventListener('click', () => runCheck());
 $('#add-btn').addEventListener('click', addAccount);
 
 $('#modal-close').addEventListener('click', () => {

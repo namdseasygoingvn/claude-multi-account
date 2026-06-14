@@ -8,7 +8,7 @@ import {
   THEME_PROMPT_RE,
   CONTINUE_PROMPT_RE,
 } from './parse.js';
-import { probeLogin } from './registry.js';
+import { ensureOnboarded, probeLogin } from './registry.js';
 
 const READY_TIMEOUT_MS = 25_000;
 /** Hard cap on how long we wait for the /usage panel after sending the command. */
@@ -49,6 +49,9 @@ export async function runUsageOnce(configDir: string | null, ev: UsageEvents = {
   const started = Date.now();
   let buf = '';
   let term: ReturnType<typeof spawnClaude>;
+  // Self-heal: skip claude's first-run wizard so a logged-in account reaches
+  // the REPL instead of looping the login picker (a no-op for ~/.claude).
+  if (configDir) ensureOnboarded(configDir);
   try {
     term = spawnClaude(configDir);
   } catch (err) {

@@ -1,6 +1,6 @@
 import { spawnClaude } from './session.js';
 import { cleanCapture, TRUST_PROMPT_RE, THEME_PROMPT_RE, CONTINUE_PROMPT_RE } from './parse.js';
-import { probeLogin } from './registry.js';
+import { ensureOnboarded, probeLogin } from './registry.js';
 
 const SNAPSHOT_TAIL = 6_000;
 const URL_RE = /https?:\/\/[^\s"'<>)\]]+/g;
@@ -77,6 +77,9 @@ export class LoginManager {
 
   start(label: string, configDir: string): void {
     this.stop(label);
+    // Skip claude's first-run wizard so, once the browser sign-in persists a
+    // token, the session lands in the REPL instead of looping the login picker.
+    ensureOnboarded(configDir);
     // Wide PTY so long OAuth URLs render on a single line and can be linkified.
     const term = spawnClaude(configDir, { cols: 400, rows: 50 });
     const sess: LoginSession = {

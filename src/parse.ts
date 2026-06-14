@@ -24,12 +24,47 @@ export function cleanCapture(raw: string): string {
   return out.join('\n').trim();
 }
 
-const HEADING_RE = /^(Current\s+(?:session|week|month)\b[^%]*?)\s*$/i;
+// Headings, percentages and reset lines can all render spaceless once the TUI's
+// cursor-positioning escapes are stripped ("Currentweek(allmodels)",
+// "ResetsJun20at4:59pm") — so every pattern tolerates missing whitespace and
+// headings are canonicalized (space-stripped) before lookup.
+const HEADING_RE = /^Current\s*(session|week|month)\b\s*(?:\(\s*([^)]*?)\s*\))?\s*$/i;
 const PCT_RE = /(\d{1,3})\s*%\s*used/i;
-const RESET_RE = /Resets\s+(.+?)\s*$/i;
+const RESET_RE = /Resets\s*(.+?)\s*$/i;
 
-function normalizeHeading(h: string): string {
-  return h.replace(/\s+/g, ' ').trim();
+/** Multi-word weekly qualifiers, keyed by their space-stripped lowercased form. */
+const QUAL_PRETTY: Record<string, string> = {
+  allmodels: 'all models',
+  opusonly: 'Opus only',
+  sonnetonly: 'Sonnet only',
+  haikuonly: 'Haiku only',
+};
+
+interface Heading {
+  period: string; // "session" | "week" | "month"
+  qualKey: string; // space-stripped lowercased qualifier ("allmodels", "opus", "")
+  display: string; // e.g. "Current week (all models)"
+}
+
+/** Parse a panel heading line, tolerating spaceless TUI rendering; null if not a heading. */
+function parseHeading(line: string): Heading | null {
+  const m = line.match(HEADING_RE);
+  if (!m) return null;
+  const period = m[1].toLowerCase();
+  const rawQual = (m[2] ?? '').trim();
+  const qualKey = rawQual.replace(/\s+/g, '').toLowerCase();
+  const pretty = qualKey ? (QUAL_PRETTY[qualKey] ?? rawQual.replace(/\s+/g, ' ')) : '';
+  return { period, qualKey, display: `Current ${period}${pretty ? ` (${pretty})` : ''}` };
+}
+
+/** Canonical, whitespace-independent key for a heading. */
+function headingKey(h: Heading): string {
+  return h.qualKey ? `${h.period} (${h.qualKey})` : h.period;
+}
+
+/** Tidy a captured reset string: ensure a single space before the timezone paren. */
+function normalizeReset(s: string): string {
+  return s.replace(/\s*\(/, ' (').trim();
 }
 
 /**
@@ -41,40 +76,38 @@ function normalizeHeading(h: string): string {
  */
 export function parseUsage(clean: string): ParsedUsage {
   const lines = clean.split('\n');
-  const byHeading = new Map<string, UsageSection>(); // keyed lowercase, insertion order = render order
+  const byKey = new Map<string, UsageSection>(); // canonical key -> section; insertion order = render order
   for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(HEADING_RE);
-    if (!m) continue;
-    const heading = normalizeHeading(m[1]);
+    const h = parseHeading(lines[i]);
+    if (!h) continue;
     let pct: number | null = null;
     let resetsAt: string | null = null;
     for (let j = i + 1; j <= i + 5 && j < lines.length; j++) {
-      if (HEADING_RE.test(lines[j])) break; // ran into the next section
+      if (parseHeading(lines[j])) break; // ran into the next section
       if (pct === null) {
         const pm = lines[j].match(PCT_RE);
         if (pm) pct = Math.min(100, parseInt(pm[1], 10));
       }
       if (resetsAt === null) {
         const rm = lines[j].match(RESET_RE);
-        if (rm) resetsAt = rm[1];
+        if (rm) resetsAt = normalizeReset(rm[1]);
       }
     }
     if (pct === null && resetsAt === null) continue; // heading echoed without data (e.g. autocomplete)
-    const key = heading.toLowerCase();
-    byHeading.delete(key); // re-insert so a later frame also refreshes order
-    byHeading.set(key, { heading, pct, resetsAt });
+    const key = headingKey(h);
+    byKey.delete(key); // re-insert so a later, more complete frame wins and refreshes order
+    byKey.set(key, { heading: h.display, pct, resetsAt });
   }
 
-  const sections = [...byHeading.values()];
-  const session = byHeading.get('current session') ?? null;
-  const weeklyAll = byHeading.get('current week (all models)') ?? null;
+  const sections = [...byKey.values()];
+  const session = byKey.get('session') ?? null;
+  const weeklyAll = byKey.get('week (allmodels)') ?? null;
   let weeklyModel: UsageSection | null = null;
   let weeklyModelLabel: string | null = null;
-  for (const [key, sec] of byHeading) {
-    const m = key.match(/^current week \((?!all models)(.+)\)$/);
-    if (m) {
+  for (const [key, sec] of byKey) {
+    if (key.startsWith('week (') && key !== 'week (allmodels)') {
       weeklyModel = sec;
-      weeklyModelLabel = sec.heading.match(/\((.+)\)/)?.[1] ?? m[1];
+      weeklyModelLabel = sec.heading.match(/\((.+)\)/)?.[1] ?? null;
     }
   }
 

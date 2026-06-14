@@ -104,6 +104,28 @@ test('cleanCapture + parseUsage work together on a synthetic PTY stream', () => 
   assert.equal(parsed.confidence, 'high');
 });
 
+test('parses the spaceless TUI rendering (regression: weekly section was dropped)', () => {
+  // Real namds666@gmail.com capture: the panel rendered with cursor positioning
+  // instead of spaces, so headings/resets arrived as "Currentweek(allmodels)" /
+  // "ResetsJun20at4:59pm". The session parsed but the weekly section was lost.
+  const clean = [
+    'Currentsession',
+    '4%used',
+    'Resets7:39am(Asia/Saigon)',
+    'Currentweek(allmodels)',
+    '7%used',
+    'ResetsJun20at4:59pm(Asia/Saigon)',
+  ].join('\n');
+  const parsed = parseUsage(clean);
+  assert.equal(parsed.sessionPct, 4);
+  assert.equal(parsed.weeklyAllPct, 7);
+  assert.equal(parsed.confidence, 'high');
+  assert.equal(parsed.sessionResetAt, '7:39am (Asia/Saigon)');
+  assert.equal(parsed.weeklyAllResetAt, 'Jun20at4:59pm (Asia/Saigon)');
+  assert.equal(parsed.sections.length, 2);
+  assert.ok(parsed.sections.every((s) => /^Current /.test(s.heading)));
+});
+
 test('detects genuine logged-out screens', () => {
   assert.ok(looksLoggedOut('Select login method\n1. Claude account with subscription'));
   assert.ok(looksLoggedOut('Paste code here if prompted:'));

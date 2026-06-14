@@ -9,6 +9,7 @@ import {
   isValidLabel,
   loadRegistry,
   probeLogin,
+  removeAccount,
 } from './registry.js';
 import { LoginManager } from './logins.js';
 import { checkUsage } from './usage.js';
@@ -130,6 +131,17 @@ app.post('/api/accounts', (req, res) => {
   } catch (err) {
     res.status(409).json({ error: errMsg(err) });
   }
+});
+
+/** Remove an account: stop any login session, un-register it, drop its dir. */
+app.delete('/api/accounts/:label', (req, res) => {
+  if (!getAccount(req.params.label)) {
+    res.status(404).json({ error: `unknown account "${req.params.label}"` });
+    return;
+  }
+  logins.stop(req.params.label);
+  removeAccount(req.params.label);
+  res.json({ ok: true });
 });
 
 /** Start (or report already-running) the interactive login PTY for an account. */

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AccountConfig } from './types.js';
@@ -63,16 +64,61 @@ export function addAccount(label?: string, configDir?: string): AccountConfig {
   }
   const dir = configDir ?? path.join(ACCOUNTS_DIR, finalLabel);
   fs.mkdirSync(dir, { recursive: true });
+  ensureOnboarded(dir); // skip claude's first-run wizard so login lands in the REPL
   const acc: AccountConfig = { label: finalLabel, configDir: dir };
   accounts.push(acc);
   saveRegistry(accounts);
   return acc;
 }
 
+/**
+ * Drop an account from the registry. Deletes its on-disk config dir only when
+ * it's tool-managed (under ACCOUNTS_DIR) — never the machine-default ~/.claude
+ * or an externally-pointed dir, which we only un-register. Returns false if no
+ * such account. The keychain credential entry is left for claude to manage.
+ */
+export function removeAccount(label: string): boolean {
+  const accounts = loadRegistry();
+  const acc = accounts.find((a) => a.label === label);
+  if (!acc) return false;
+  saveRegistry(accounts.filter((a) => a.label !== label));
+  const resolved = path.resolve(acc.configDir);
+  const managed = resolved.startsWith(path.resolve(ACCOUNTS_DIR) + path.sep);
+  if (managed && resolved !== path.join(os.homedir(), '.claude')) {
+    fs.rmSync(resolved, { recursive: true, force: true });
+  }
+  return true;
+}
+
 /** Empty directory used as cwd for spawned claude REPLs, so no real project gets touched. */
 export function scratchDir(): string {
   fs.mkdirSync(SCRATCH_DIR, { recursive: true });
   return SCRATCH_DIR;
+}
+
+/**
+ * Claude Code re-runs its first-run onboarding (theme picker, then the "Select
+ * login method" screen) on every launch until `hasCompletedOnboarding` is true
+ * in the config dir's `.claude.json`. While it does, it IGNORES a valid token
+ * already in the keychain and loops back to the login picker — so a
+ * freshly-authenticated account stays stuck "logged in but never usable" if its
+ * login session was killed before reaching the REPL. Seed the flag so claude
+ * trusts the persisted token and drops straight into the REPL. Idempotent;
+ * never touches the machine-default ~/.claude (the user's real config).
+ */
+export function ensureOnboarded(configDir: string): void {
+  if (path.resolve(configDir) === path.join(os.homedir(), '.claude')) return;
+  const file = path.join(configDir, '.claude.json');
+  let cfg: Record<string, unknown> = {};
+  try {
+    cfg = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    /* no state file yet — start fresh */
+  }
+  if (cfg.hasCompletedOnboarding === true) return;
+  cfg.hasCompletedOnboarding = true;
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n');
 }
 
 export interface LoginProbe {
