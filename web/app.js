@@ -49,14 +49,14 @@ function refreshIcons() {
 
 function metricHtml(name, pct, resetsAt) {
   const high = pct != null && pct >= 90 ? ' high' : '';
+  const reset = resetsAt ? ` <span class="metric-reset">· resets ${esc(resetsAt)}</span>` : '';
   return `
     <div class="metric">
       <div class="metric-top">
-        <span class="metric-name">${esc(name)}</span>
+        <span class="metric-name">${esc(name)}${reset}</span>
         <span class="metric-val">${pct == null ? '—' : pct + '%'}</span>
       </div>
       <div class="bar"><div class="bar-fill${high}" style="width:${Math.min(100, pct ?? 0)}%"></div></div>
-      ${resetsAt ? `<div class="metric-reset">resets ${esc(resetsAt)}</div>` : ''}
     </div>`;
 }
 
@@ -138,7 +138,42 @@ function renderCards() {
   for (const btn of el.querySelectorAll('.delete-btn')) {
     btn.addEventListener('click', () => deleteAccount(btn.dataset.label));
   }
+  // Expanding/collapsing raw output changes the content height — refit then too.
+  for (const d of el.querySelectorAll('details.raw')) {
+    d.addEventListener('toggle', fitWindow);
+  }
   refreshIcons();
+  fitWindow();
+}
+
+// Show at most this many accounts before the list starts to scroll.
+const MAX_VISIBLE_ACCOUNTS = 5;
+
+// Size the popover to its content so it isn't empty with one account, capped at
+// MAX_VISIBLE_ACCOUNTS so a long list scrolls instead of filling the screen.
+function fitWindow() {
+  requestAnimationFrame(() => {
+    const header = document.querySelector('.header');
+    const headSep = document.querySelector('.header + .sep');
+    const footer = document.querySelector('.footer');
+    const cards = $('#cards');
+    if (!header || !footer || !cards) return;
+
+    const chrome = header.offsetHeight + (headSep ? headSep.offsetHeight : 0) + footer.offsetHeight;
+
+    // #cards' own height is the intrinsic content height (the .content flex box
+    // would report its stretched height instead).
+    let contentH = cards.offsetHeight;
+    const accts = cards.querySelectorAll('.acct');
+    if (accts.length > MAX_VISIBLE_ACCOUNTS) {
+      // Cap to the bottom of the Nth account. Use bounding rects (not summed
+      // offsetHeights) so the separators' vertical margins are included.
+      const top = cards.getBoundingClientRect().top;
+      const cut = accts[MAX_VISIBLE_ACCOUNTS - 1].getBoundingClientRect().bottom;
+      contentH = cut - top;
+    }
+    invoke('win:resize', { height: Math.ceil(chrome + contentH) }).catch(() => {});
+  });
 }
 
 function updateToolbar() {

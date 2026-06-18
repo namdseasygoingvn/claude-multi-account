@@ -199,7 +199,8 @@ async function addAccountFlow(): Promise<void> {
 function createWindow(): void {
   win = new BrowserWindow({
     width: 340,
-    height: 560,
+    height: 360, // initial only — the renderer fits the window to its content
+
     show: false,
     frame: false,
     resizable: false,
@@ -329,6 +330,21 @@ function registerIpc(): void {
 
   ipcMain.handle('shell:openExternal', (_e, payload: { url: string }) => {
     if (/^https?:/.test(payload?.url ?? '')) void shell.openExternal(payload.url);
+    return { ok: true };
+  });
+
+  // The renderer measures its content and asks us to fit the popover to it
+  // (capped at ~5 accounts; taller content scrolls). Keep width fixed; clamp
+  // the height so the window never runs past the bottom of the screen.
+  ipcMain.handle('win:resize', (_e, payload: { height: number }) => {
+    if (!win) return { ok: false };
+    const [w] = win.getSize();
+    const desired = Math.round(payload?.height ?? 0);
+    if (!Number.isFinite(desired) || desired < 80) return { ok: false };
+    const { y } = win.getBounds();
+    const area = screen.getDisplayNearestPoint(win.getBounds()).workArea;
+    const maxH = Math.max(200, area.y + area.height - y - 8);
+    win.setSize(w, Math.min(desired, maxH), false);
     return { ok: true };
   });
 }

@@ -10,6 +10,7 @@ const INVOKE = new Set([
   'login:code',
   'usage:check',
   'shell:openExternal',
+  'win:resize',
 ]);
 
 // Push channels the main process emits (replaces the old WebSocket messages).

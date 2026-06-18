@@ -66,7 +66,7 @@
     .status { margin-left: auto; max-width: 56%; font-size: 11px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
 
     /* Separator (hairline, inset like a native menu) */
-    .sep { height: 1px; background: var(--sep); margin: 5px 12px; flex: 0 0 auto; }
+    .sep { height: 1px; background: var(--sep); margin: 4px 12px; flex: 0 0 auto; }
 
     /* Scrollable account list */
     .content { flex: 1 1 auto; overflow-y: auto; }
@@ -75,10 +75,10 @@
     .empty { padding: 26px 16px; text-align: center; color: var(--label-2); }
     .empty .sub { margin-top: 3px; font-size: 12px; color: var(--label-3); }
 
-    /* One account */
-    .acct { padding: 1px 0 3px; }
+    /* One account (kept compact so several fit at once) */
+    .acct { padding: 1px 0 2px; }
     .acct.active { box-shadow: inset 2px 0 0 var(--accent); }
-    .acct-head { display: flex; align-items: center; gap: 7px; padding: 3px 10px 3px 12px; }
+    .acct-head { display: flex; align-items: center; gap: 7px; padding: 2px 10px 2px 12px; }
     .dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; }
     .dot.on { background: var(--green); }
     .dot.off { background: var(--label-3); }
@@ -88,29 +88,29 @@
 
     .ibtn {
       display: inline-flex; align-items: center; justify-content: center;
-      width: 22px; height: 22px; padding: 0;
+      width: 20px; height: 20px; padding: 0;
       border: none; border-radius: 5px; background: transparent;
       color: var(--label-2); cursor: default;
       transition: background 0.1s ease, color 0.1s ease;
     }
-    .ibtn svg { width: 14px; height: 14px; }
+    .ibtn svg { width: 13px; height: 13px; }
     .ibtn:hover { background: var(--hover); color: var(--label); }
     .ibtn.danger:hover { background: var(--red-soft); color: var(--red); }
     .ibtn:disabled { opacity: 0.35; }
 
-    /* Usage metrics (label left, bold value right, thin bar) */
-    .metrics { padding: 0 12px 2px; }
-    .metric { margin-top: 6px; }
+    /* Usage metrics (name + reset left, bold value right, thin bar) */
+    .metrics { padding: 0 12px 3px; }
+    .metric { margin-top: 4px; }
     .metric-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-    .metric-name { font-size: 12px; color: var(--label-2); }
-    .metric-val { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .bar { height: 4px; margin-top: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+    .metric-name { flex: 1; min-width: 0; font-size: 12px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .metric-reset { color: var(--label-3); }
+    .metric-val { flex: 0 0 auto; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .bar { height: 4px; margin-top: 3px; border-radius: 2px; background: var(--track); overflow: hidden; }
     .bar-fill { height: 100%; border-radius: 2px; background: var(--accent); }
     .bar-fill.high { background: var(--red); }
-    .metric-reset { margin-top: 3px; font-size: 11px; color: var(--label-3); }
 
-    .phase { display: flex; align-items: center; gap: 7px; padding: 3px 12px; font-size: 12px; color: var(--label-2); }
-    .noinfo { padding: 1px 12px 3px; font-size: 12px; color: var(--label-3); }
+    .phase { display: flex; align-items: center; gap: 7px; padding: 2px 12px; font-size: 12px; color: var(--label-2); }
+    .noinfo { padding: 0 12px 2px; font-size: 12px; color: var(--label-3); }
     .hint { padding: 2px 12px; font-size: 11px; color: var(--accent); }
     .err { margin: 4px 12px; padding: 5px 8px; border-radius: 6px; background: var(--red-soft); color: var(--red); font-size: 11px; }
 
