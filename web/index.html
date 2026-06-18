@@ -126,8 +126,8 @@
       -webkit-user-select: text; user-select: text;
     }
 
-    /* Footer menu items (native rounded highlight on hover) */
-    .footer { flex: 0 0 auto; padding-bottom: 6px; }
+    /* Top action menu items (native rounded highlight on hover) */
+    .topbar { flex: 0 0 auto; padding: 2px 0; }
     .mitem {
       display: flex; align-items: center; gap: 8px;
       margin: 0 5px; padding: 5px 7px; border-radius: 5px;
@@ -189,12 +189,8 @@
     <span class="title">Claude Usage</span>
     <span id="status" class="status"></span>
   </div>
-  <div class="sep" style="margin-top: 0;"></div>
 
-  <div class="content"><div id="cards"></div></div>
-
-  <div class="footer">
-    <div class="sep"></div>
+  <div class="topbar">
     <div class="mitem" id="check-btn">
       <i data-lucide="refresh-cw"></i><span id="check-btn-text">Check usage</span>
     </div>
@@ -208,6 +204,9 @@
       </span>
     </div>
   </div>
+  <div class="sep"></div>
+
+  <div class="content"><div id="cards"></div></div>
 
   <!-- Sign-in sheet -->
   <div id="login-modal" class="sheet-bg hidden">

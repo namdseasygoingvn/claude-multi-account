@@ -153,13 +153,13 @@ const MAX_VISIBLE_ACCOUNTS = 5;
 // MAX_VISIBLE_ACCOUNTS so a long list scrolls instead of filling the screen.
 function fitWindow() {
   requestAnimationFrame(() => {
-    const header = document.querySelector('.header');
-    const headSep = document.querySelector('.header + .sep');
-    const footer = document.querySelector('.footer');
+    const content = document.querySelector('.content');
     const cards = $('#cards');
-    if (!header || !footer || !cards) return;
+    if (!content || !cards) return;
 
-    const chrome = header.offsetHeight + (headSep ? headSep.offsetHeight : 0) + footer.offsetHeight;
+    // Everything above the scrollable list (header + action bar + separator).
+    // The list is the last in-flow element, so its top edge is the full chrome.
+    const chrome = content.getBoundingClientRect().top;
 
     // #cards' own height is the intrinsic content height (the .content flex box
     // would report its stretched height instead).
