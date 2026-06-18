@@ -1,6 +1,7 @@
 # dependencies / build
 node_modules/
 dist/
+dist-app/
 
 # per-account Claude config dirs — live OAuth state, never commit
 accounts/

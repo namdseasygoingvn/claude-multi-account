@@ -20,15 +20,15 @@ function mainBusy() {
   return state.accounts.length > 0 && state.accounts.every((a) => state.checking.has(a.label));
 }
 
-async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    method: opts.method || 'GET',
-    headers: { 'Content-Type': 'application/json' },
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
-  return data;
+// Talk to the Electron main process over IPC (replaces fetch to the old server).
+// Strip Electron's "Error invoking remote method '…':" prefix for clean messages.
+async function invoke(channel, payload) {
+  try {
+    return await window.api.invoke(channel, payload);
+  } catch (err) {
+    const m = String(err && err.message ? err.message : err);
+    throw new Error(m.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, ''));
+  }
 }
 
 function esc(s) {
@@ -186,7 +186,7 @@ function updateToolbar() {
 
 async function loadAccounts() {
   try {
-    const data = await api('/api/accounts');
+    const data = await invoke('accounts:list');
     state.accounts = data.accounts;
     renderCards();
   } catch (err) {
@@ -210,7 +210,7 @@ async function runCheck(labels) {
   updateToolbar();
   renderCards();
   try {
-    const data = await api('/api/usage/check', { method: 'POST', body: { labels: fresh } });
+    const data = await invoke('usage:check', { labels: fresh });
     for (const r of data.results) state.results.set(r.label, r);
   } catch (err) {
     setStatus(`check failed: ${err.message}`);
@@ -230,7 +230,7 @@ async function deleteAccount(label) {
   const name = (acc && acc.email) || label;
   if (!confirm(`Delete account "${name}"?\nThis removes it from the monitor and deletes its local session.`)) return;
   try {
-    await api(`/api/accounts/${encodeURIComponent(label)}`, { method: 'DELETE' });
+    await invoke('accounts:remove', { label });
     state.results.delete(label);
     state.phases.delete(label);
     await loadAccounts();
@@ -241,7 +241,7 @@ async function deleteAccount(label) {
 
 async function addAccount() {
   try {
-    const data = await api('/api/accounts', { method: 'POST', body: {} });
+    const data = await invoke('accounts:add', {});
     await loadAccounts();
     openLogin(data.account.label);
   } catch (err) {
@@ -274,7 +274,7 @@ async function openLogin(label) {
   showModal(true);
   renderCards();
   try {
-    await api(`/api/accounts/${encodeURIComponent(label)}/login`, { method: 'POST' });
+    await invoke('login:start', { label });
   } catch (err) {
     setModalStatus(`failed to start sign-in: ${err.message}`);
   }
@@ -311,24 +311,34 @@ function loginSucceeded(email) {
   }, 2200);
 }
 
-// ───────────────────────── websocket ─────────────────────────
+// ───────────────────────── main-process events (IPC) ─────────────────────────
 
-function connectWs() {
-  const ws = new WebSocket(`ws://${location.host}/ws`);
-  ws.onmessage = (e) => {
-    let m;
-    try {
-      m = JSON.parse(e.data);
-    } catch {
-      return;
-    }
-    handleWs(m);
-  };
-  ws.onclose = () => setTimeout(connectWs, 1500);
+const EVENT_CHANNELS = [
+  'login-status',
+  'login-url',
+  'login-success',
+  'login-exit',
+  'usage-status',
+  'usage-result',
+  'check-start',
+  'check-done',
+  'account-added',
+];
+
+// Subscribe to each push channel; reconstruct the old `{ type, ...payload }`
+// shape so the handler below is unchanged from the WebSocket version.
+function connectEvents() {
+  for (const ch of EVENT_CHANNELS) {
+    window.api.on(ch, (data) => handleWs({ type: ch, ...(data || {}) }));
+  }
 }
 
 function handleWs(m) {
   switch (m.type) {
+    case 'account-added':
+      // Tray-menu "Add account…" started a sign-in — open the login view for it.
+      loadAccounts().then(() => openLogin(m.label));
+      break;
     case 'login-status':
       if (m.label === state.activeLogin && !state.loginDone) setModalStatus(m.status + '…');
       break;
@@ -418,5 +428,5 @@ $('#auto-mins').addEventListener('change', () => {
 });
 
 refreshIcons();
-connectWs();
+connectEvents();
 loadAccounts();

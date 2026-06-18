@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>Claude Quota Monitor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script src="vendor/tailwind.js"></script>
   <style type="text/tailwindcss">
     @theme {
       --color-system-gray6: #1C1C1E;
@@ -80,7 +80,7 @@
   <!-- Sidebar -->
   <aside class="group/sidebar fixed left-0 top-14 bottom-0 w-14 hover:w-44 glass border-r border-white/10 z-40 overflow-hidden transition-[width] duration-200 ease-in-out">
     <nav class="flex flex-col gap-2 p-2 h-full">
-      <a href="/" class="flex items-center gap-3 p-2 rounded-xl bg-gradient-to-br from-[#F3EB35] to-[#F99C24] text-black shadow-lg shadow-[#F99C24]/30 transition-all duration-200">
+      <a href="#" class="flex items-center gap-3 p-2 rounded-xl bg-gradient-to-br from-[#F3EB35] to-[#F99C24] text-black shadow-lg shadow-[#F99C24]/30 transition-all duration-200">
         <i data-lucide="layout-dashboard" class="w-5 h-5 shrink-0"></i>
         <span class="text-sm font-semibold whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 delay-75">Usage</span>
       </a>
@@ -142,7 +142,7 @@
     </div>
   </div>
 
-  <script src="https://unpkg.com/lucide@0.554.0/dist/umd/lucide.min.js"></script>
+  <script src="vendor/lucide.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

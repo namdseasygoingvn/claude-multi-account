@@ -1,23 +1,25 @@
 # Claude Multi-Account Quota Monitor
 
-A local tool that watches the usage quota of **multiple Claude accounts** at once. One button runs `/usage` against every account — each one a *real* `claude` CLI session — and renders the results as cards in a small web UI.
+A native **macOS menu-bar app** that watches the usage quota of **multiple Claude accounts** at once. It lives in the menu bar (no terminal, no browser tab); click the tray icon for a popover that runs `/usage` against every account — each one a *real* `claude` CLI session — and renders the results as cards.
 
 ```
-┌─────────────┐     HTTP / WS      ┌────────────────────────┐
-│   Web UI    │ ─────────────────> │   Backend (Node)       │
-│  button +   │ <───────────────── │  • account registry    │
-│  result     │   usage results    │  • PTY session manager │
-│  cards      │                    │  • /usage parser       │
-└─────────────┘                    └───────────┬────────────┘
-                                               │ spawns (parallel)
-                      ┌────────────────────────┼────────────────────────┐
-                      │                        │                        │
-               ┌──────▼──────┐          ┌──────▼──────┐          ┌──────▼──────┐
-               │ claude PTY  │          │ claude PTY  │          │ claude PTY  │
-               │   acc1      │          │   acc2      │          │   acc3      │
-               │ CFG_DIR=…/1 │          │ CFG_DIR=…/2 │          │ CFG_DIR=…/3 │
-               └─────────────┘          └─────────────┘          └─────────────┘
+   menu bar ◔ 72%  ──click──▶  ┌───────────────────────┐
+   (Tray, NSStatusItem)        │  Popover BrowserWindow │  web/ (cards)
+                               └───────────┬────────────┘
+                                  preload.mjs (contextBridge)
+                                           │ ipcRenderer.invoke / .on
+                                ┌──────────▼───────────┐
+                                │  Electron main proc  │  registry · logins · usage · session · parse
+                                └──────────┬───────────┘
+                                           │ spawns (parallel)
+                      ┌────────────────────┼────────────────────┐
+               ┌──────▼──────┐      ┌──────▼──────┐      ┌──────▼──────┐
+               │ claude PTY  │      │ claude PTY  │      │ claude PTY  │
+               │ CFG_DIR=…/1 │      │ CFG_DIR=…/2 │      │ CFG_DIR=…/3 │
+               └─────────────┘      └─────────────┘      └─────────────┘
 ```
+
+No network sockets — the renderer talks to the main process over Electron IPC; the main process calls the engine modules directly.
 
 ## How it works — two tricks
 
@@ -28,10 +30,19 @@ A local tool that watches the usage quota of **multiple Claude accounts** at onc
 
 ```bash
 npm install
-npm run dev          # → http://127.0.0.1:3000
+npm run rebuild:pty   # rebuild node-pty against Electron's ABI (one-time, or after reinstalling deps)
+npm run app           # compile TS + launch the menu-bar app
 ```
 
-Requires Node 18+ and the `claude` CLI on PATH (`CLAUDE_BIN` env var overrides the binary; `PORT` overrides the port). The web UI loads Tailwind and lucide icons from CDNs, so the first page load needs internet.
+A gauge icon appears in the macOS menu bar — click it for the popover. Requires Node 18+ and the `claude` CLI installed (`CLAUDE_BIN` overrides the binary path; otherwise it's auto-resolved from common locations / your login-shell PATH). Tailwind and lucide are vendored locally under `web/vendor/`, so the app works offline.
+
+### Package a `.app` / `.dmg`
+
+```bash
+npm run dist          # → dist-app/ (electron-builder, unsigned)
+```
+
+`LSUIElement` is set so the packaged app runs menu-bar-only (no Dock icon). For distribution beyond your own machine, add Developer ID signing + notarization.
 
 ### Add an account
 
@@ -56,11 +67,11 @@ Paths must be absolute (no `~` expansion). The default `~/.claude` is special-ca
 
 ### Check usage
 
-Click **Check usage** — the backend fans out over all accounts in parallel, one ephemeral PTY each, and streams progress over WebSocket. Optional auto-refresh by interval. `/usage` is a status read, not a model call, so it shouldn't consume quota — but don't poll aggressively.
+Click **Check usage** — the main process fans out over all accounts in parallel, one ephemeral PTY each, and pushes progress to the popover over IPC. The menu-bar icon also shows the worst-case usage % as a badge, and its right-click menu has **Check usage now** + auto-refresh. Optional auto-refresh by interval. `/usage` is a status read, not a model call, so it shouldn't consume quota — but don't poll aggressively.
 
 ## CLI spike
 
-Prove the capture works on your machine / Claude Code version without the server:
+Prove the capture works on your machine / Claude Code version without launching the app (runs under plain Node via tsx):
 
 ```bash
 npm run spike                            # default ~/.claude account
@@ -68,16 +79,21 @@ npm run spike -- --config-dir ./accounts/work
 npm run spike -- --save capture.txt     # keep the cleaned capture
 ```
 
-## API
+## IPC contract
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET`  | `/api/accounts` | List labels + login status |
-| `POST` | `/api/accounts` | `{ label }` → create config dir, start auto-driven login session |
-| `POST` | `/api/accounts/:label/login` | Start (or reuse) the login session |
-| `POST` | `/api/accounts/:label/login/stop` | Kill a login session (it normally stops itself on success) |
-| `POST` | `/api/usage/check` | `{ labels? }` → run `/usage` on all (or some), return results |
-| `WS`   | `/ws` | Login status/URL/success events, usage progress + results |
+The renderer (`web/app.js`) talks to the main process over Electron IPC. Request/response channels (`ipcRenderer.invoke`):
+
+| Channel | Purpose |
+|---|---|
+| `accounts:list` | List labels + login status |
+| `accounts:add` | `{ label? }` → create config dir, start auto-driven login session |
+| `accounts:remove` | `{ label }` → stop login, un-register, drop tool-managed dir |
+| `login:start` / `login:stop` | Start (or reuse) / kill a login session |
+| `login:code` | `{ label, code }` → paste an OAuth code into a running session |
+| `usage:check` | `{ labels? }` → run `/usage` on all (or some), return results |
+| `shell:openExternal` | open a URL in the default browser |
+
+Push events (`webContents.send` → `ipcRenderer.on`): `login-status`, `login-url`, `login-success`, `login-exit`, `usage-status`, `usage-result`, `check-start`, `check-done`, `account-added`.
 
 A usage result carries the parsed sections (`pct`, `resetsAt` per section), a confidence flag, and the ANSI-stripped raw capture as a fallback — the UI always lets you expand the raw panel when parsing looks off.
 
@@ -85,23 +101,26 @@ A usage result carries the parsed sections (`pct`, `resetsAt` per section), a co
 
 ```
 src/
-  server.ts      # express + ws, all endpoints
+  main.ts        # Electron entry: tray + popover, IPC handlers, lifecycle
+  preload.mts    # contextBridge — whitelists IPC channels (compiles to preload.mjs)
+  paths.ts       # data-root resolver (userData when packaged, repo root in dev)
   registry.ts    # accounts.json ↔ label/config-dir mapping, login probe
   session.ts     # node-pty spawn of the claude REPL
   usage.ts       # send /usage, idle-debounce capture, ephemeral lifecycle
   parse.ts       # strip ANSI/TUI chrome, regex → structured sections
   logins.ts      # interactive login PTYs, snapshot/URL streaming
   types.ts
-web/             # vanilla HTML/JS/CSS frontend
-scripts/spike.ts # milestone-1 single-account capture proof
+web/             # vanilla HTML/JS/CSS popover UI (vendor/ = local Tailwind + lucide)
+assets/          # tray template icon + app icon (generated by scripts/gen-icons.mjs)
+scripts/spike.ts # single-account capture proof (plain Node)
 test/            # parser tests against a real captured panel
-accounts/        # one CLAUDE_CONFIG_DIR per account   (gitignored)
-accounts.json    # label → config dir registry          (gitignored)
+accounts/        # one CLAUDE_CONFIG_DIR per account   (gitignored; userData when packaged)
+accounts.json    # label → config dir registry          (gitignored; userData when packaged)
 ```
 
 ## Security
 
-- The machine ends up holding **live OAuth state for every registered account**. The server binds `127.0.0.1` only — never expose it to the LAN.
+- The machine ends up holding **live OAuth state for every registered account**. There's no network surface: the app is a local Electron process with no listening socket, and the popover loads from `file://` with `contextIsolation` on and `nodeIntegration` off.
 - The registry stores labels and paths, **no secrets**. Tokens stay in each config dir / OS keychain. `accounts/` and `accounts.json` are gitignored.
 - The browser sign-in itself stays human: the tool only answers onboarding menus (theme, login method, trust, "press Enter") and never touches credentials. Spawned REPLs get a scrubbed environment (`ANTHROPIC_*` / `CLAUDE_CODE_*` removed) so each account can only authenticate via its own config dir.
 - Removing an account should be `/logout` in that dir (clears its keychain item) — don't hard-delete config dirs casually.

@@ -2,15 +2,17 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { AccountConfig } from './types.js';
+import { getDataRoot } from './paths.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-/** Works from both src/ (tsx) and dist/ (compiled) since each sits one level below the root. */
-export const PROJECT_ROOT = path.resolve(__dirname, '..');
-export const ACCOUNTS_DIR = path.join(PROJECT_ROOT, 'accounts');
-export const SCRATCH_DIR = path.join(PROJECT_ROOT, '.scratch');
-const REGISTRY_FILE = path.join(PROJECT_ROOT, 'accounts.json');
+// Resolved at call time (not module load) so a packaged build can redirect the
+// data root to userData via setDataRoot() before the first registry access.
+function accountsDir(): string {
+  return path.join(getDataRoot(), 'accounts');
+}
+function registryFile(): string {
+  return path.join(getDataRoot(), 'accounts.json');
+}
 
 const LABEL_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,31}$/;
 
@@ -20,7 +22,7 @@ export function isValidLabel(label: string): boolean {
 
 export function loadRegistry(): AccountConfig[] {
   try {
-    const data = JSON.parse(fs.readFileSync(REGISTRY_FILE, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(registryFile(), 'utf8'));
     if (Array.isArray(data)) {
       return data.filter(
         (a): a is AccountConfig => a && typeof a.label === 'string' && typeof a.configDir === 'string',
@@ -33,7 +35,8 @@ export function loadRegistry(): AccountConfig[] {
 }
 
 export function saveRegistry(accounts: AccountConfig[]): void {
-  fs.writeFileSync(REGISTRY_FILE, JSON.stringify(accounts, null, 2) + '\n');
+  fs.mkdirSync(getDataRoot(), { recursive: true });
+  fs.writeFileSync(registryFile(), JSON.stringify(accounts, null, 2) + '\n');
 }
 
 export function getAccount(label: string): AccountConfig | undefined {
@@ -62,7 +65,7 @@ export function addAccount(label?: string, configDir?: string): AccountConfig {
       finalLabel = randomLabel();
     } while (accounts.some((a) => a.label === finalLabel));
   }
-  const dir = configDir ?? path.join(ACCOUNTS_DIR, finalLabel);
+  const dir = configDir ?? path.join(accountsDir(), finalLabel);
   fs.mkdirSync(dir, { recursive: true });
   ensureOnboarded(dir); // skip claude's first-run wizard so login lands in the REPL
   const acc: AccountConfig = { label: finalLabel, configDir: dir };
@@ -83,7 +86,7 @@ export function removeAccount(label: string): boolean {
   if (!acc) return false;
   saveRegistry(accounts.filter((a) => a.label !== label));
   const resolved = path.resolve(acc.configDir);
-  const managed = resolved.startsWith(path.resolve(ACCOUNTS_DIR) + path.sep);
+  const managed = resolved.startsWith(path.resolve(accountsDir()) + path.sep);
   if (managed && resolved !== path.join(os.homedir(), '.claude')) {
     fs.rmSync(resolved, { recursive: true, force: true });
   }
@@ -92,8 +95,9 @@ export function removeAccount(label: string): boolean {
 
 /** Empty directory used as cwd for spawned claude REPLs, so no real project gets touched. */
 export function scratchDir(): string {
-  fs.mkdirSync(SCRATCH_DIR, { recursive: true });
-  return SCRATCH_DIR;
+  const dir = path.join(getDataRoot(), '.scratch');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 /**

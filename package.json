@@ -1,31 +1,60 @@
 {
   "name": "ezg-claude-multi-account",
   "version": "0.1.0",
-  "description": "Local multi-account Claude Code quota monitor — drives real `claude` REPLs over PTYs, runs /usage for every account, shows results in a tiny web UI.",
+  "description": "Native macOS menu-bar app that watches Claude Code usage quota across multiple accounts — drives real `claude` REPLs over PTYs and runs /usage for each.",
   "type": "module",
   "private": true,
+  "main": "dist/main.js",
   "engines": {
     "node": ">=18"
   },
   "scripts": {
     "postinstall": "node scripts/fix-pty-perms.mjs",
-    "dev": "tsx src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js",
+    "app": "npm run build && electron .",
+    "dev": "npm run build && electron .",
+    "start": "electron .",
+    "rebuild:pty": "electron-rebuild -f -w node-pty",
+    "gen-icons": "node scripts/gen-icons.mjs",
+    "dist": "npm run build && electron-builder",
     "spike": "tsx scripts/spike.ts",
     "test": "tsx --test test/parse.test.ts"
   },
   "dependencies": {
-    "express": "^4.21.2",
+    "fix-path": "^5.0.0",
     "node-pty": "^1.0.0",
-    "strip-ansi": "^7.1.0",
-    "ws": "^8.18.0"
+    "strip-ansi": "^7.1.0"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
+    "@electron/rebuild": "^4.0.4",
     "@types/node": "^22.10.0",
-    "@types/ws": "^8.5.13",
+    "electron": "^42.4.1",
+    "electron-builder": "^26.15.3",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
+  },
+  "build": {
+    "appId": "vn.easygoing.claudequota",
+    "productName": "Claude Quota Monitor",
+    "directories": {
+      "output": "dist-app"
+    },
+    "files": [
+      "dist/**",
+      "web/**",
+      "assets/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": "dmg",
+      "icon": "assets/icon.png",
+      "extendInfo": {
+        "LSUIElement": true
+      }
+    }
   }
 }
