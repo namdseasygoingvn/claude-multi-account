@@ -198,15 +198,18 @@ async function addAccountFlow(): Promise<void> {
 // ── Popover window ───────────────────────────────────────────────────────────
 function createWindow(): void {
   win = new BrowserWindow({
-    width: 380,
-    height: 600,
+    width: 340,
+    height: 560,
     show: false,
     frame: false,
     resizable: false,
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    vibrancy: 'under-window',
+    roundedCorners: true,
+    // `popover` is the frosted system menu/popover material (like the Wi-Fi
+    // menu or the "Hot" app), not the darker `under-window` window material.
+    vibrancy: 'popover',
     visualEffectState: 'active',
     backgroundColor: '#00000000',
     webPreferences: {

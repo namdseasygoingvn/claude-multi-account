@@ -5,42 +5,42 @@
   <title>Claude Usage</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    /* ── Native macOS appearance ──────────────────────────────────────────
-       The window is a frameless menu-bar popover with `vibrancy: under-window`
-       (see src/main.ts), so the body is transparent and the system material
-       shows through. Colors track the system light/dark appearance. */
+    /* Plain native macOS menu/popover look (cf. the system Wi-Fi menu, or the
+       "Hot" app). The window uses the system `popover` vibrancy material
+       (src/main.ts), so the body is transparent and the frosted material shows
+       through. Colors track the system light/dark appearance. */
     :root {
       color-scheme: light dark;
-      --label: rgba(0, 0, 0, 0.85);
-      --label-2: rgba(0, 0, 0, 0.5);
-      --label-3: rgba(0, 0, 0, 0.28);
-      --separator: rgba(0, 0, 0, 0.1);
-      --fill: rgba(0, 0, 0, 0.05);
-      --fill-2: rgba(0, 0, 0, 0.09);
-      --fill-3: rgba(0, 0, 0, 0.14);
-      --card: rgba(255, 255, 255, 0.55);
-      --panel: rgba(250, 250, 250, 0.92);
-      --accent: #007aff;
+      --label: rgba(0, 0, 0, 0.88);
+      --label-2: rgba(0, 0, 0, 0.52);
+      --label-3: rgba(0, 0, 0, 0.32);
+      --sep: rgba(0, 0, 0, 0.10);
+      --hover: rgba(0, 0, 0, 0.07);
+      --track: rgba(0, 0, 0, 0.09);
+      --accent: #0a7aff;          /* macOS menu-selection blue */
       --on-accent: #ffffff;
-      --red: #ff3b30;
-      --red-soft: rgba(255, 59, 48, 0.12);
-      --green: #34c759;
-      --green-soft: rgba(52, 199, 89, 0.15);
+      --red: #d70015;
+      --red-soft: rgba(215, 0, 21, 0.12);
+      --green: #1d9b3f;
+      --green-soft: rgba(29, 155, 63, 0.15);
+      --panel: rgba(246, 246, 246, 0.97);
+      --field: rgba(0, 0, 0, 0.05);
     }
     @media (prefers-color-scheme: dark) {
       :root {
         --label: rgba(255, 255, 255, 0.92);
         --label-2: rgba(255, 255, 255, 0.55);
-        --label-3: rgba(255, 255, 255, 0.32);
-        --separator: rgba(255, 255, 255, 0.13);
-        --fill: rgba(255, 255, 255, 0.07);
-        --fill-2: rgba(255, 255, 255, 0.12);
-        --fill-3: rgba(255, 255, 255, 0.18);
-        --card: rgba(255, 255, 255, 0.07);
-        --panel: rgba(44, 44, 46, 0.92);
+        --label-3: rgba(255, 255, 255, 0.35);
+        --sep: rgba(255, 255, 255, 0.13);
+        --hover: rgba(255, 255, 255, 0.10);
+        --track: rgba(255, 255, 255, 0.15);
         --accent: #0a84ff;
         --red: #ff453a;
+        --red-soft: rgba(255, 69, 58, 0.16);
         --green: #30d158;
+        --green-soft: rgba(48, 209, 88, 0.18);
+        --panel: rgba(40, 40, 42, 0.97);
+        --field: rgba(255, 255, 255, 0.08);
       }
     }
 
@@ -54,349 +54,174 @@
       color: var(--label);
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
       font-size: 13px;
-      line-height: 1.35;
+      line-height: 1.3;
+      cursor: default;
       -webkit-user-select: none;
       user-select: none;
-      cursor: default;
     }
 
-    /* ── Toolbar ───────────────────────────────────────────────────────── */
-    .toolbar {
-      flex: 0 0 auto;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      height: 44px;
-      padding: 0 10px 0 14px;
-      border-bottom: 1px solid var(--separator);
-    }
-    .toolbar__title {
-      flex: 1;
-      min-width: 0;
-      font-size: 13px;
-      font-weight: 600;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+    /* Header */
+    .header { display: flex; align-items: center; gap: 8px; padding: 8px 12px 6px; flex: 0 0 auto; }
+    .title { font-weight: 600; }
+    .status { margin-left: auto; max-width: 56%; font-size: 11px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
 
-    /* ── Buttons ───────────────────────────────────────────────────────── */
-    .icon-btn {
-      flex: 0 0 auto;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      padding: 0;
-      border: none;
-      border-radius: 7px;
-      background: transparent;
-      color: var(--label-2);
-      cursor: default;
-      transition: background 0.12s ease, color 0.12s ease;
+    /* Separator (hairline, inset like a native menu) */
+    .sep { height: 1px; background: var(--sep); margin: 5px 12px; flex: 0 0 auto; }
+
+    /* Scrollable account list */
+    .content { flex: 1 1 auto; overflow-y: auto; }
+    #cards { padding: 0; }
+
+    .empty { padding: 26px 16px; text-align: center; color: var(--label-2); }
+    .empty .sub { margin-top: 3px; font-size: 12px; color: var(--label-3); }
+
+    /* One account */
+    .acct { padding: 1px 0 3px; }
+    .acct.active { box-shadow: inset 2px 0 0 var(--accent); }
+    .acct-head { display: flex; align-items: center; gap: 7px; padding: 3px 10px 3px 12px; }
+    .dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; }
+    .dot.on { background: var(--green); }
+    .dot.off { background: var(--label-3); }
+    .email { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .email.off { color: var(--label-2); }
+    .acct-actions { display: flex; gap: 1px; flex: 0 0 auto; }
+
+    .ibtn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; padding: 0;
+      border: none; border-radius: 5px; background: transparent;
+      color: var(--label-2); cursor: default;
+      transition: background 0.1s ease, color 0.1s ease;
     }
-    .icon-btn:hover { background: var(--fill-2); color: var(--label); }
-    .icon-btn:active { background: var(--fill-3); }
-    .icon-btn:disabled { opacity: 0.4; }
-    .icon-btn--sm { width: 26px; height: 26px; border-radius: 6px; }
-    .icon-btn--sm svg { width: 15px; height: 15px; }
-    .icon-btn--danger:hover { background: var(--red-soft); color: var(--red); }
-    .icon-btn svg { width: 16px; height: 16px; }
+    .ibtn svg { width: 14px; height: 14px; }
+    .ibtn:hover { background: var(--hover); color: var(--label); }
+    .ibtn.danger:hover { background: var(--red-soft); color: var(--red); }
+    .ibtn:disabled { opacity: 0.35; }
 
-    .btn {
-      flex: 0 0 auto;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      height: 26px;
-      padding: 0 11px;
-      border: none;
-      border-radius: 7px;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--label);
-      background: var(--fill);
-      cursor: default;
-      transition: background 0.12s ease, filter 0.12s ease;
-    }
-    .btn:hover { background: var(--fill-2); }
-    .btn:active { background: var(--fill-3); }
-    .btn svg { width: 14px; height: 14px; }
-    .btn--accent { background: var(--accent); color: var(--on-accent); }
-    .btn--accent:hover { background: var(--accent); filter: brightness(1.08); }
-    .btn--accent:active { filter: brightness(0.94); }
-    .btn:disabled { opacity: 0.5; }
+    /* Usage metrics (label left, bold value right, thin bar) */
+    .metrics { padding: 0 12px 2px; }
+    .metric { margin-top: 6px; }
+    .metric-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .metric-name { font-size: 12px; color: var(--label-2); }
+    .metric-val { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .bar { height: 4px; margin-top: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 2px; background: var(--accent); }
+    .bar-fill.high { background: var(--red); }
+    .metric-reset { margin-top: 3px; font-size: 11px; color: var(--label-3); }
 
-    /* ── Content / account list ────────────────────────────────────────── */
-    .content { flex: 1 1 auto; overflow-y: auto; padding: 10px; }
-    #cards { display: flex; flex-direction: column; gap: 8px; }
+    .phase { display: flex; align-items: center; gap: 7px; padding: 3px 12px; font-size: 12px; color: var(--label-2); }
+    .noinfo { padding: 1px 12px 3px; font-size: 12px; color: var(--label-3); }
+    .hint { padding: 2px 12px; font-size: 11px; color: var(--accent); }
+    .err { margin: 4px 12px; padding: 5px 8px; border-radius: 6px; background: var(--red-soft); color: var(--red); font-size: 11px; }
 
-    .card {
-      padding: 10px 12px;
-      border: 1px solid var(--separator);
-      border-radius: 10px;
-      background: var(--card);
-    }
-    .card--active { box-shadow: 0 0 0 2px var(--accent); }
-    .card__head { display: flex; align-items: center; gap: 8px; }
-    .card__actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      max-width: 100%;
-      min-width: 0;
-    }
-    .badge__dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
-    .badge__email {
-      font-size: 12px;
-      font-weight: 500;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-    }
-    .badge--out { font-size: 11px; color: var(--label-2); }
-
-    .metric { margin-top: 10px; }
-    .metric__top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
-    .metric__name { font-size: 12px; color: var(--label-2); }
-    .metric__pct { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .bar { height: 6px; border-radius: 3px; background: var(--fill); overflow: hidden; }
-    .bar__fill { height: 100%; border-radius: 3px; background: var(--accent); }
-    .bar__fill--high { background: var(--red); }
-    .metric__reset { margin-top: 4px; font-size: 11px; color: var(--label-3); }
-
-    .phase { display: flex; align-items: center; gap: 7px; margin-top: 10px; font-size: 12px; color: var(--label-2); }
-    .hint { margin-top: 10px; font-size: 11px; color: var(--accent); }
-
-    .error {
-      margin-top: 10px;
-      padding: 7px 10px;
-      border: 1px solid rgba(255, 59, 48, 0.22);
-      border-radius: 7px;
-      background: var(--red-soft);
-      font-size: 11px;
-      color: var(--red);
-    }
-
-    details.raw { margin-top: 10px; }
-    .raw summary {
-      font-size: 11px;
-      color: var(--label-3);
-      cursor: default;
-      list-style: none;
-      transition: color 0.12s ease;
-    }
+    details.raw { padding: 2px 12px 0; }
+    .raw summary { font-size: 11px; color: var(--label-3); list-style: none; }
     .raw summary::-webkit-details-marker { display: none; }
     .raw summary:hover { color: var(--label-2); }
     .raw pre {
-      margin: 6px 0 0;
-      padding: 8px;
-      border: 1px solid var(--separator);
-      border-radius: 7px;
-      background: var(--fill);
-      font-family: ui-monospace, "SF Mono", Menlo, monospace;
-      font-size: 11px;
-      color: var(--label-2);
-      white-space: pre-wrap;
-      word-break: break-word;
-      max-height: 220px;
-      overflow: auto;
-      -webkit-user-select: text;
-      user-select: text;
+      margin: 5px 0 2px; padding: 7px; border-radius: 6px;
+      background: var(--field);
+      font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: var(--label-2);
+      white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow: auto;
+      -webkit-user-select: text; user-select: text;
     }
 
-    .empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 52px 24px; text-align: center; }
-    .empty__icon { color: var(--label-3); }
-    .empty__icon svg { width: 40px; height: 40px; }
-    .empty__title { font-size: 14px; font-weight: 600; }
-    .empty__sub { font-size: 12px; color: var(--label-2); }
-    .empty__sub strong { color: var(--label); font-weight: 600; }
+    /* Footer menu items (native rounded highlight on hover) */
+    .footer { flex: 0 0 auto; padding-bottom: 6px; }
+    .mitem {
+      display: flex; align-items: center; gap: 8px;
+      margin: 0 5px; padding: 5px 7px; border-radius: 5px;
+      cursor: default;
+    }
+    .mitem svg { width: 15px; height: 15px; color: var(--label-2); }
+    .mitem:hover { background: var(--accent); color: var(--on-accent); }
+    .mitem:hover svg { color: var(--on-accent); }
+    .mitem.is-busy { opacity: 0.55; }
+    .mitem.is-busy:hover { background: transparent; color: var(--label); }
+    .mitem.is-busy:hover svg { color: var(--label-2); }
 
-    /* ── Status bar ────────────────────────────────────────────────────── */
-    .statusbar {
-      flex: 0 0 auto;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      height: 34px;
-      padding: 0 12px;
-      border-top: 1px solid var(--separator);
-      font-size: 11px;
-      color: var(--label-2);
-    }
-    .auto { display: flex; align-items: center; gap: 6px; }
-    .auto label { display: flex; align-items: center; gap: 5px; }
-    .auto input[type="checkbox"] { width: 13px; height: 13px; margin: 0; accent-color: var(--accent); }
-    .auto__label { text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; font-size: 10px; color: var(--label-2); }
-    .field {
-      width: 38px;
-      height: 20px;
-      padding: 0 4px;
-      border: 1px solid var(--separator);
-      border-radius: 5px;
-      background: var(--fill);
-      color: var(--label);
-      font-size: 11px;
-      text-align: center;
-    }
-    .field:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
-    .auto__interval.is-off { opacity: 0.4; pointer-events: none; }
-    .statusbar__msg { flex: 1; min-width: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .auto-row { display: flex; align-items: center; gap: 8px; margin: 0 5px; padding: 4px 7px; font-size: 12px; color: var(--label-2); }
+    .auto-row label { display: flex; align-items: center; gap: 5px; }
+    .auto-row input[type="checkbox"] { width: 13px; height: 13px; margin: 0; accent-color: var(--accent); }
+    .interval { display: inline-flex; align-items: center; gap: 4px; }
+    .interval.is-off { opacity: 0.45; pointer-events: none; }
+    .mins { width: 34px; height: 18px; padding: 0 3px; border: 1px solid var(--sep); border-radius: 4px; background: var(--field); color: var(--label); font-size: 11px; text-align: center; }
+    .mins:focus { outline: 1.5px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 
-    /* ── Sign-in sheet ─────────────────────────────────────────────────── */
-    .sheet-backdrop {
-      position: fixed;
-      inset: 0;
-      z-index: 50;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 16px;
-      background: rgba(0, 0, 0, 0.18);
-    }
-    @media (prefers-color-scheme: dark) { .sheet-backdrop { background: rgba(0, 0, 0, 0.42); } }
-    .sheet {
-      position: relative;
-      width: 100%;
-      max-width: 320px;
-      padding: 18px;
-      border: 1px solid var(--separator);
-      border-radius: 14px;
-      background: var(--panel);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      box-shadow: 0 14px 44px rgba(0, 0, 0, 0.32);
-    }
-    .sheet__close { position: absolute; top: 10px; right: 10px; }
-    .sheet__badge {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 40px;
-      height: 40px;
-      margin-bottom: 12px;
-      border-radius: 10px;
-      background: var(--fill);
-      color: var(--accent);
-    }
-    .sheet__badge svg { width: 20px; height: 20px; }
-    .sheet__title { margin: 0 0 2px; font-size: 16px; font-weight: 600; }
-    .sheet__sub { margin: 0 0 14px; font-size: 12px; color: var(--label-2); }
-
-    .progress { display: flex; align-items: center; gap: 9px; font-size: 13px; }
-    .note { margin-top: 16px; font-size: 11px; line-height: 1.5; color: var(--label-3); }
-    .urls { margin-top: 14px; }
-    .urls__label { margin-bottom: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--label-3); }
-    .urls__list { display: flex; flex-direction: column; gap: 6px; }
-    .urls__list a {
-      font-size: 12px;
-      color: var(--accent);
-      text-decoration: none;
-      word-break: break-all;
-      -webkit-user-select: text;
-      user-select: text;
-    }
-    .urls__list a:hover { text-decoration: underline; }
-
-    .success { display: flex; align-items: center; gap: 11px; }
-    .success__icon {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex: 0 0 auto;
-      width: 38px;
-      height: 38px;
-      border-radius: 50%;
-      border: 1px solid rgba(52, 199, 89, 0.3);
-      background: var(--green-soft);
-      color: var(--green);
-    }
-    .success__icon svg { width: 20px; height: 20px; }
-    .success__title { font-weight: 600; color: var(--green); }
-    .success__email { font-size: 12px; color: var(--label-2); }
-
-    /* ── Spinner & helpers ─────────────────────────────────────────────── */
-    .spinner {
-      flex: 0 0 auto;
-      width: 14px;
-      height: 14px;
-      border: 2px solid var(--accent);
-      border-top-color: transparent;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-    .spinner--sm { width: 13px; height: 13px; }
+    /* Spinner */
+    .spin { flex: 0 0 auto; width: 13px; height: 13px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; opacity: 0.7; animation: spin 0.7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Sign-in sheet */
+    .sheet-bg { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 14px; background: rgba(0, 0, 0, 0.18); }
+    @media (prefers-color-scheme: dark) { .sheet-bg { background: rgba(0, 0, 0, 0.42); } }
+    .sheet { position: relative; width: 100%; max-width: 300px; padding: 16px; border-radius: 12px; background: var(--panel); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.32); }
+    .sheet .close { position: absolute; top: 8px; right: 8px; }
+    .sheet .badge { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin-bottom: 10px; border-radius: 8px; background: var(--field); color: var(--accent); }
+    .sheet .badge svg { width: 18px; height: 18px; }
+    .sheet h2 { margin: 0 0 2px; font-size: 15px; font-weight: 600; }
+    .sheet .sub { margin: 0 0 12px; font-size: 12px; color: var(--label-2); }
+    .prog { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .note { margin-top: 14px; font-size: 11px; line-height: 1.5; color: var(--label-3); }
+    .urls { margin-top: 12px; }
+    .urls .l { margin-bottom: 5px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--label-3); }
+    .urls .list { display: flex; flex-direction: column; gap: 5px; }
+    .urls a { font-size: 12px; color: var(--accent); text-decoration: none; word-break: break-all; -webkit-user-select: text; user-select: text; }
+    .urls a:hover { text-decoration: underline; }
+    .ok { display: flex; align-items: center; gap: 10px; }
+    .ok .ic { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; background: var(--green-soft); color: var(--green); }
+    .ok .ic svg { width: 18px; height: 18px; }
+    .ok .t { font-weight: 600; color: var(--green); }
+    .ok .e { font-size: 12px; color: var(--label-2); }
 
     .hidden { display: none !important; }
 
-    ::-webkit-scrollbar { width: 9px; }
+    ::-webkit-scrollbar { width: 8px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb {
-      background: var(--label-3);
-      border-radius: 9px;
-      border: 2px solid transparent;
-      background-clip: content-box;
-    }
+    ::-webkit-scrollbar-thumb { background: var(--label-3); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
     ::-webkit-scrollbar-thumb:hover { background: var(--label-2); }
-
     ::selection { background: var(--accent); color: var(--on-accent); }
   </style>
 </head>
 <body>
 
-  <!-- Toolbar -->
-  <header class="toolbar">
-    <span class="toolbar__title">Claude Usage</span>
-    <button id="check-btn" class="btn btn--accent" title="Check usage for all accounts">
+  <div class="header">
+    <span class="title">Claude Usage</span>
+    <span id="status" class="status"></span>
+  </div>
+  <div class="sep" style="margin-top: 0;"></div>
+
+  <div class="content"><div id="cards"></div></div>
+
+  <div class="footer">
+    <div class="sep"></div>
+    <div class="mitem" id="check-btn">
       <i data-lucide="refresh-cw"></i><span id="check-btn-text">Check usage</span>
-    </button>
-    <button id="add-btn" class="icon-btn" title="Add account">
-      <i data-lucide="user-plus"></i>
-    </button>
-  </header>
-
-  <!-- Account list -->
-  <main class="content">
-    <section id="cards"></section>
-  </main>
-
-  <!-- Status bar -->
-  <footer class="statusbar">
-    <div class="auto">
-      <label>
-        <input type="checkbox" id="auto-toggle">
-        <span class="auto__label">Auto</span>
-      </label>
-      <div id="auto-interval-wrap" class="auto__interval is-off">
-        <input type="text" id="auto-mins" inputmode="numeric" value="15" aria-label="auto-refresh minutes" class="field">
-        <span style="color: var(--label-3);">min</span>
-      </div>
     </div>
-    <span id="status" class="statusbar__msg"></span>
-  </footer>
+    <div class="mitem" id="add-btn">
+      <i data-lucide="user-plus"></i>Add account…
+    </div>
+    <div class="auto-row">
+      <label><input type="checkbox" id="auto-toggle">Auto-refresh</label>
+      <span id="auto-interval-wrap" class="interval is-off">every
+        <input type="text" id="auto-mins" inputmode="numeric" value="15" class="mins" aria-label="auto-refresh minutes"> min
+      </span>
+    </div>
+  </div>
 
   <!-- Sign-in sheet -->
-  <div id="login-modal" class="sheet-backdrop hidden">
+  <div id="login-modal" class="sheet-bg hidden">
     <div class="sheet">
-      <button id="modal-close" class="icon-btn icon-btn--sm sheet__close" title="Close">
-        <i data-lucide="x"></i>
-      </button>
-      <div class="sheet__badge"><i data-lucide="key-round"></i></div>
-      <h2 class="sheet__title">Sign in to Claude</h2>
-      <p id="modal-sub" class="sheet__sub">Adding a new account</p>
+      <button id="modal-close" class="ibtn close" title="Close"><i data-lucide="x"></i></button>
+      <div class="badge"><i data-lucide="key-round"></i></div>
+      <h2>Sign in to Claude</h2>
+      <p id="modal-sub" class="sub">Adding a new account</p>
 
       <div id="modal-progress">
-        <div class="progress">
-          <span class="spinner spinner--sm"></span>
-          <span id="modal-status">starting claude…</span>
-        </div>
+        <div class="prog"><span class="spin"></span><span id="modal-status">starting claude…</span></div>
         <div id="modal-urls" class="urls hidden">
-          <div class="urls__label">Browser didn’t open?</div>
-          <div id="modal-url-list" class="urls__list"></div>
+          <div class="l">Browser didn’t open?</div>
+          <div id="modal-url-list" class="list"></div>
         </div>
         <p class="note">
           Theme and sign-in method are chosen automatically. Finish signing in in the browser — this window closes by
@@ -405,11 +230,11 @@
       </div>
 
       <div id="modal-success" class="hidden">
-        <div class="success">
-          <div class="success__icon"><i data-lucide="check"></i></div>
+        <div class="ok">
+          <div class="ic"><i data-lucide="check"></i></div>
           <div>
-            <div class="success__title">Signed in</div>
-            <div id="modal-success-email" class="success__email"></div>
+            <div class="t">Signed in</div>
+            <div id="modal-success-email" class="e"></div>
           </div>
         </div>
       </div>

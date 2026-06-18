@@ -48,29 +48,16 @@ function refreshIcons() {
 // ───────────────────────── cards ─────────────────────────
 
 function metricHtml(name, pct, resetsAt) {
-  const high = pct != null && pct >= 90 ? ' bar__fill--high' : '';
+  const high = pct != null && pct >= 90 ? ' high' : '';
   return `
     <div class="metric">
-      <div class="metric__top">
-        <span class="metric__name">${esc(name)}</span>
-        <span class="metric__pct">${pct == null ? '—' : pct + '%'}</span>
+      <div class="metric-top">
+        <span class="metric-name">${esc(name)}</span>
+        <span class="metric-val">${pct == null ? '—' : pct + '%'}</span>
       </div>
-      <div class="bar">
-        <div class="bar__fill${high}" style="width:${Math.min(100, pct ?? 0)}%"></div>
-      </div>
-      ${resetsAt ? `<div class="metric__reset">resets ${esc(resetsAt)}</div>` : ''}
+      <div class="bar"><div class="bar-fill${high}" style="width:${Math.min(100, pct ?? 0)}%"></div></div>
+      ${resetsAt ? `<div class="metric-reset">resets ${esc(resetsAt)}</div>` : ''}
     </div>`;
-}
-
-function badgeHtml(acc) {
-  if (acc.loggedIn) {
-    return `
-      <span class="badge">
-        <span class="badge__dot"></span>
-        <span class="badge__email">${esc(acc.email || 'signed in')}</span>
-      </span>`;
-  }
-  return `<span class="badge badge--out">not signed in</span>`;
 }
 
 function cardHtml(acc) {
@@ -79,23 +66,21 @@ function cardHtml(acc) {
 
   let body = '';
   if (phase) {
-    body += `
-      <div class="phase">
-        <span class="spinner spinner--sm"></span>
-        ${esc(phase)}…
-      </div>`;
+    body += `<div class="phase"><span class="spin"></span>${esc(phase)}…</div>`;
   }
   if (r) {
     if (r.parsed && r.parsed.sections.length) {
+      body += '<div class="metrics">';
       for (const s of r.parsed.sections) {
         body += metricHtml(s.heading.replace(/^Current\s+/i, ''), s.pct, s.resetsAt);
       }
+      body += '</div>';
       if (r.parsed.confidence === 'low') {
-        body += `<div class="hint">low parse confidence — check the raw output</div>`;
+        body += `<div class="hint">low parse confidence — see raw output</div>`;
       }
     }
     if (r.error) {
-      body += `<div class="error">${esc(r.error)}</div>`;
+      body += `<div class="err">${esc(r.error)}</div>`;
     }
     if (r.raw) {
       body += `
@@ -105,47 +90,44 @@ function cardHtml(acc) {
         </details>`;
     }
   } else if (!phase) {
-    body += `<div class="phase" style="color: var(--label-3);">no check yet</div>`;
+    body += `<div class="noinfo">no check yet</div>`;
   }
 
-  // Borderless icon buttons: check this account, sign in, delete.
+  const dot = `<span class="dot ${acc.loggedIn ? 'on' : 'off'}"></span>`;
+  const email = acc.loggedIn
+    ? `<span class="email">${esc(acc.email || 'signed in')}</span>`
+    : `<span class="email off">not signed in</span>`;
+
+  // Borderless trailing actions: check this account, sign in, delete.
   const actions = `
-    <div class="card__actions">
-      <button class="check-one-btn icon-btn icon-btn--sm"
-              data-label="${esc(acc.label)}" title="Check usage for this account" ${state.checking.has(acc.label) ? 'disabled' : ''}>
+    <span class="acct-actions">
+      <button class="check-one-btn ibtn" data-label="${esc(acc.label)}" title="Check usage for this account" ${state.checking.has(acc.label) ? 'disabled' : ''}>
         <i data-lucide="refresh-cw"></i>
       </button>
-      <button class="login-btn icon-btn icon-btn--sm"
-              data-label="${esc(acc.label)}" title="Sign in this account">
+      <button class="login-btn ibtn" data-label="${esc(acc.label)}" title="Sign in this account">
         <i data-lucide="log-in"></i>
       </button>
-      <button class="delete-btn icon-btn icon-btn--sm icon-btn--danger"
-              data-label="${esc(acc.label)}" title="Delete account">
+      <button class="delete-btn ibtn danger" data-label="${esc(acc.label)}" title="Delete account">
         <i data-lucide="trash-2"></i>
       </button>
-    </div>`;
+    </span>`;
 
   return `
-    <article class="card ${state.activeLogin === acc.label && !state.loginDone ? 'card--active' : ''}">
-      <div class="card__head">
-        <div style="flex: 1; min-width: 0;">${badgeHtml(acc)}</div>
-        ${actions}
-      </div>
+    <div class="acct${state.activeLogin === acc.label && !state.loginDone ? ' active' : ''}">
+      <div class="acct-head">${dot}${email}${actions}</div>
       ${body}
-    </article>`;
+    </div>`;
 }
 
 function renderCards() {
   const el = $('#cards');
   if (state.accounts.length === 0) {
     el.innerHTML = `
-      <div class="empty">
-        <div class="empty__icon"><i data-lucide="users"></i></div>
-        <div class="empty__title">No accounts yet</div>
-        <div class="empty__sub">Click the <strong>+</strong> button in the top-right to add one.</div>
+      <div class="empty">No accounts yet.
+        <div class="sub">Use “Add account…” below to get started.</div>
       </div>`;
   } else {
-    el.innerHTML = state.accounts.map(cardHtml).join('');
+    el.innerHTML = state.accounts.map(cardHtml).join('<div class="sep"></div>');
   }
   for (const btn of el.querySelectorAll('.login-btn')) {
     btn.addEventListener('click', () => openLogin(btn.dataset.label));
@@ -161,7 +143,7 @@ function renderCards() {
 
 function updateToolbar() {
   const busy = mainBusy();
-  $('#check-btn').disabled = busy;
+  $('#check-btn').classList.toggle('is-busy', busy);
   $('#check-btn-text').textContent = busy ? 'Checking…' : 'Check usage';
 }
 
