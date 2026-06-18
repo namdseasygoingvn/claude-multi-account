@@ -2,140 +2,414 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Claude Quota Monitor</title>
+  <title>Claude Usage</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <script src="vendor/tailwind.js"></script>
-  <style type="text/tailwindcss">
-    @theme {
-      --color-system-gray6: #1C1C1E;
-      --color-system-gray5: #2C2C2E;
-      --color-system-gray4: #3A3A3C;
-      --color-system-gray3: #48484A;
-      --color-system-gray2: #636366;
-      --color-system-gray: #8E8E93;
-      --color-system-blue: #F99C24;
-      --color-system-red: #FF3B30;
-      --color-system-green: #34C759;
-      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    }
-  </style>
   <style>
-    .glass {
-      background: rgba(28, 28, 30, 0.65);
+    /* ── Native macOS appearance ──────────────────────────────────────────
+       The window is a frameless menu-bar popover with `vibrancy: under-window`
+       (see src/main.ts), so the body is transparent and the system material
+       shows through. Colors track the system light/dark appearance. */
+    :root {
+      color-scheme: light dark;
+      --label: rgba(0, 0, 0, 0.85);
+      --label-2: rgba(0, 0, 0, 0.5);
+      --label-3: rgba(0, 0, 0, 0.28);
+      --separator: rgba(0, 0, 0, 0.1);
+      --fill: rgba(0, 0, 0, 0.05);
+      --fill-2: rgba(0, 0, 0, 0.09);
+      --fill-3: rgba(0, 0, 0, 0.14);
+      --card: rgba(255, 255, 255, 0.55);
+      --panel: rgba(250, 250, 250, 0.92);
+      --accent: #007aff;
+      --on-accent: #ffffff;
+      --red: #ff3b30;
+      --red-soft: rgba(255, 59, 48, 0.12);
+      --green: #34c759;
+      --green-soft: rgba(52, 199, 89, 0.15);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --label: rgba(255, 255, 255, 0.92);
+        --label-2: rgba(255, 255, 255, 0.55);
+        --label-3: rgba(255, 255, 255, 0.32);
+        --separator: rgba(255, 255, 255, 0.13);
+        --fill: rgba(255, 255, 255, 0.07);
+        --fill-2: rgba(255, 255, 255, 0.12);
+        --fill-3: rgba(255, 255, 255, 0.18);
+        --card: rgba(255, 255, 255, 0.07);
+        --panel: rgba(44, 44, 46, 0.92);
+        --accent: #0a84ff;
+        --red: #ff453a;
+        --green: #30d158;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: transparent;
+      color: var(--label);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      font-size: 13px;
+      line-height: 1.35;
+      -webkit-user-select: none;
+      user-select: none;
+      cursor: default;
+    }
+
+    /* ── Toolbar ───────────────────────────────────────────────────────── */
+    .toolbar {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 44px;
+      padding: 0 10px 0 14px;
+      border-bottom: 1px solid var(--separator);
+    }
+    .toolbar__title {
+      flex: 1;
+      min-width: 0;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ── Buttons ───────────────────────────────────────────────────────── */
+    .icon-btn {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: none;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--label-2);
+      cursor: default;
+      transition: background 0.12s ease, color 0.12s ease;
+    }
+    .icon-btn:hover { background: var(--fill-2); color: var(--label); }
+    .icon-btn:active { background: var(--fill-3); }
+    .icon-btn:disabled { opacity: 0.4; }
+    .icon-btn--sm { width: 26px; height: 26px; border-radius: 6px; }
+    .icon-btn--sm svg { width: 15px; height: 15px; }
+    .icon-btn--danger:hover { background: var(--red-soft); color: var(--red); }
+    .icon-btn svg { width: 16px; height: 16px; }
+
+    .btn {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 26px;
+      padding: 0 11px;
+      border: none;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--label);
+      background: var(--fill);
+      cursor: default;
+      transition: background 0.12s ease, filter 0.12s ease;
+    }
+    .btn:hover { background: var(--fill-2); }
+    .btn:active { background: var(--fill-3); }
+    .btn svg { width: 14px; height: 14px; }
+    .btn--accent { background: var(--accent); color: var(--on-accent); }
+    .btn--accent:hover { background: var(--accent); filter: brightness(1.08); }
+    .btn--accent:active { filter: brightness(0.94); }
+    .btn:disabled { opacity: 0.5; }
+
+    /* ── Content / account list ────────────────────────────────────────── */
+    .content { flex: 1 1 auto; overflow-y: auto; padding: 10px; }
+    #cards { display: flex; flex-direction: column; gap: 8px; }
+
+    .card {
+      padding: 10px 12px;
+      border: 1px solid var(--separator);
+      border-radius: 10px;
+      background: var(--card);
+    }
+    .card--active { box-shadow: 0 0 0 2px var(--accent); }
+    .card__head { display: flex; align-items: center; gap: 8px; }
+    .card__actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 100%;
+      min-width: 0;
+    }
+    .badge__dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+    .badge__email {
+      font-size: 12px;
+      font-weight: 500;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .badge--out { font-size: 11px; color: var(--label-2); }
+
+    .metric { margin-top: 10px; }
+    .metric__top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+    .metric__name { font-size: 12px; color: var(--label-2); }
+    .metric__pct { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .bar { height: 6px; border-radius: 3px; background: var(--fill); overflow: hidden; }
+    .bar__fill { height: 100%; border-radius: 3px; background: var(--accent); }
+    .bar__fill--high { background: var(--red); }
+    .metric__reset { margin-top: 4px; font-size: 11px; color: var(--label-3); }
+
+    .phase { display: flex; align-items: center; gap: 7px; margin-top: 10px; font-size: 12px; color: var(--label-2); }
+    .hint { margin-top: 10px; font-size: 11px; color: var(--accent); }
+
+    .error {
+      margin-top: 10px;
+      padding: 7px 10px;
+      border: 1px solid rgba(255, 59, 48, 0.22);
+      border-radius: 7px;
+      background: var(--red-soft);
+      font-size: 11px;
+      color: var(--red);
+    }
+
+    details.raw { margin-top: 10px; }
+    .raw summary {
+      font-size: 11px;
+      color: var(--label-3);
+      cursor: default;
+      list-style: none;
+      transition: color 0.12s ease;
+    }
+    .raw summary::-webkit-details-marker { display: none; }
+    .raw summary:hover { color: var(--label-2); }
+    .raw pre {
+      margin: 6px 0 0;
+      padding: 8px;
+      border: 1px solid var(--separator);
+      border-radius: 7px;
+      background: var(--fill);
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 11px;
+      color: var(--label-2);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 220px;
+      overflow: auto;
+      -webkit-user-select: text;
+      user-select: text;
+    }
+
+    .empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 52px 24px; text-align: center; }
+    .empty__icon { color: var(--label-3); }
+    .empty__icon svg { width: 40px; height: 40px; }
+    .empty__title { font-size: 14px; font-weight: 600; }
+    .empty__sub { font-size: 12px; color: var(--label-2); }
+    .empty__sub strong { color: var(--label); font-weight: 600; }
+
+    /* ── Status bar ────────────────────────────────────────────────────── */
+    .statusbar {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 34px;
+      padding: 0 12px;
+      border-top: 1px solid var(--separator);
+      font-size: 11px;
+      color: var(--label-2);
+    }
+    .auto { display: flex; align-items: center; gap: 6px; }
+    .auto label { display: flex; align-items: center; gap: 5px; }
+    .auto input[type="checkbox"] { width: 13px; height: 13px; margin: 0; accent-color: var(--accent); }
+    .auto__label { text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; font-size: 10px; color: var(--label-2); }
+    .field {
+      width: 38px;
+      height: 20px;
+      padding: 0 4px;
+      border: 1px solid var(--separator);
+      border-radius: 5px;
+      background: var(--fill);
+      color: var(--label);
+      font-size: 11px;
+      text-align: center;
+    }
+    .field:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+    .auto__interval.is-off { opacity: 0.4; pointer-events: none; }
+    .statusbar__msg { flex: 1; min-width: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── Sign-in sheet ─────────────────────────────────────────────────── */
+    .sheet-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.18);
+    }
+    @media (prefers-color-scheme: dark) { .sheet-backdrop { background: rgba(0, 0, 0, 0.42); } }
+    .sheet {
+      position: relative;
+      width: 100%;
+      max-width: 320px;
+      padding: 18px;
+      border: 1px solid var(--separator);
+      border-radius: 14px;
+      background: var(--panel);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 14px 44px rgba(0, 0, 0, 0.32);
     }
-    .glass-panel {
-      background: rgba(44, 44, 46, 0.4);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+    .sheet__close { position: absolute; top: 10px; right: 10px; }
+    .sheet__badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      margin-bottom: 12px;
+      border-radius: 10px;
+      background: var(--fill);
+      color: var(--accent);
     }
-    ::-webkit-scrollbar { width: 10px; background: transparent; }
+    .sheet__badge svg { width: 20px; height: 20px; }
+    .sheet__title { margin: 0 0 2px; font-size: 16px; font-weight: 600; }
+    .sheet__sub { margin: 0 0 14px; font-size: 12px; color: var(--label-2); }
+
+    .progress { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+    .note { margin-top: 16px; font-size: 11px; line-height: 1.5; color: var(--label-3); }
+    .urls { margin-top: 14px; }
+    .urls__label { margin-bottom: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--label-3); }
+    .urls__list { display: flex; flex-direction: column; gap: 6px; }
+    .urls__list a {
+      font-size: 12px;
+      color: var(--accent);
+      text-decoration: none;
+      word-break: break-all;
+      -webkit-user-select: text;
+      user-select: text;
+    }
+    .urls__list a:hover { text-decoration: underline; }
+
+    .success { display: flex; align-items: center; gap: 11px; }
+    .success__icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: 1px solid rgba(52, 199, 89, 0.3);
+      background: var(--green-soft);
+      color: var(--green);
+    }
+    .success__icon svg { width: 20px; height: 20px; }
+    .success__title { font-weight: 600; color: var(--green); }
+    .success__email { font-size: 12px; color: var(--label-2); }
+
+    /* ── Spinner & helpers ─────────────────────────────────────────────── */
+    .spinner {
+      flex: 0 0 auto;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--accent);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    .spinner--sm { width: 13px; height: 13px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .hidden { display: none !important; }
+
+    ::-webkit-scrollbar { width: 9px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb {
-      background: #48484a;
-      border-radius: 10px;
+      background: var(--label-3);
+      border-radius: 9px;
       border: 2px solid transparent;
       background-clip: content-box;
     }
-    ::-webkit-scrollbar-thumb:hover { background: #636366; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--label-2); }
+
+    ::selection { background: var(--accent); color: var(--on-accent); }
   </style>
 </head>
-<body class="bg-black text-white font-sans selection:bg-system-blue/30 selection:text-white">
+<body>
 
-  <!-- Header -->
-  <header class="fixed top-0 left-0 right-0 h-14 glass border-b border-white/10 z-50 flex items-center gap-3 px-4">
-    <div class="w-8 h-8 bg-gradient-to-br from-[#F3EB35] to-[#F99C24] rounded-xl shadow-lg shadow-[#F99C24]/30 flex items-center justify-center shrink-0">
-      <i data-lucide="gauge" class="w-4 h-4 text-black"></i>
-    </div>
-    <h1 class="text-lg font-semibold whitespace-nowrap">Claude Quota Monitor</h1>
-    <span id="status" class="text-sm text-gray-500 truncate"></span>
-    <div class="flex-1"></div>
-
-    <!-- Auto-refresh: checkbox on/off + minutes field -->
-    <div class="hidden sm:flex items-center gap-2">
-      <label class="flex items-center gap-2 cursor-pointer select-none">
-        <input type="checkbox" id="auto-toggle" class="w-4 h-4 accent-system-blue">
-        <span class="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Auto</span>
-      </label>
-      <div id="auto-interval-wrap" class="flex items-center gap-1.5 opacity-40 pointer-events-none transition-opacity">
-        <input type="text" id="auto-mins" inputmode="numeric" value="15" aria-label="auto-refresh minutes"
-               class="w-12 bg-white/5 border border-white/10 rounded-lg text-sm text-white text-center px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#F99C24] focus:border-transparent transition-all">
-        <span class="text-xs text-gray-500">min</span>
-      </div>
-    </div>
-
-    <button id="check-btn"
-      class="inline-flex items-center gap-2 bg-gradient-to-r from-[#F3EB35] to-[#F99C24] hover:opacity-90 text-black font-bold text-sm rounded-xl px-4 py-2 shadow-lg shadow-[#F99C24]/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-      <i data-lucide="refresh-cw" class="w-4 h-4"></i><span id="check-btn-text">Check usage</span>
+  <!-- Toolbar -->
+  <header class="toolbar">
+    <span class="toolbar__title">Claude Usage</span>
+    <button id="check-btn" class="btn btn--accent" title="Check usage for all accounts">
+      <i data-lucide="refresh-cw"></i><span id="check-btn-text">Check usage</span>
     </button>
-    <button id="add-btn"
-      class="inline-flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white text-sm font-medium rounded-xl px-4 py-2 transition-colors">
-      <i data-lucide="user-plus" class="w-4 h-4"></i>Add account
+    <button id="add-btn" class="icon-btn" title="Add account">
+      <i data-lucide="user-plus"></i>
     </button>
   </header>
 
-  <!-- Sidebar -->
-  <aside class="group/sidebar fixed left-0 top-14 bottom-0 w-14 hover:w-44 glass border-r border-white/10 z-40 overflow-hidden transition-[width] duration-200 ease-in-out">
-    <nav class="flex flex-col gap-2 p-2 h-full">
-      <a href="#" class="flex items-center gap-3 p-2 rounded-xl bg-gradient-to-br from-[#F3EB35] to-[#F99C24] text-black shadow-lg shadow-[#F99C24]/30 transition-all duration-200">
-        <i data-lucide="layout-dashboard" class="w-5 h-5 shrink-0"></i>
-        <span class="text-sm font-semibold whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 delay-75">Usage</span>
-      </a>
-      <a href="https://github.com/namdseasygoingvn/ezg-claude-multi-account" target="_blank" rel="noopener noreferrer"
-         class="flex items-center gap-3 p-2 rounded-xl text-gray-500 hover:text-white hover:bg-white/10 transition-all duration-200">
-        <i data-lucide="github" class="w-5 h-5 shrink-0"></i>
-        <span class="text-sm whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 delay-75">Repository</span>
-      </a>
-    </nav>
-  </aside>
-
-  <!-- Main -->
-  <main class="pl-14 pt-14 h-screen overflow-hidden">
-    <div class="h-full overflow-y-auto">
-      <div class="px-6 py-6 max-w-6xl mx-auto">
-        <section id="cards" class="grid gap-6 [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]"></section>
-      </div>
-    </div>
+  <!-- Account list -->
+  <main class="content">
+    <section id="cards"></section>
   </main>
 
-  <!-- Login modal -->
-  <div id="login-modal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-md hidden items-center justify-center p-6">
-    <div class="glass rounded-3xl shadow-2xl shadow-black/50 p-8 w-full max-w-md relative">
-      <button id="modal-close" class="absolute top-4 right-4 p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors">
-        <i data-lucide="x" class="w-4 h-4"></i>
-      </button>
-      <div class="w-16 h-16 bg-gradient-to-br from-[#F3EB35] to-[#F99C24] rounded-2xl shadow-lg shadow-[#F99C24]/20 flex items-center justify-center mb-5">
-        <i data-lucide="key-round" class="w-8 h-8 text-black"></i>
+  <!-- Status bar -->
+  <footer class="statusbar">
+    <div class="auto">
+      <label>
+        <input type="checkbox" id="auto-toggle">
+        <span class="auto__label">Auto</span>
+      </label>
+      <div id="auto-interval-wrap" class="auto__interval is-off">
+        <input type="text" id="auto-mins" inputmode="numeric" value="15" aria-label="auto-refresh minutes" class="field">
+        <span style="color: var(--label-3);">min</span>
       </div>
-      <h2 class="text-2xl font-bold mb-1">Sign in to Claude</h2>
-      <p id="modal-sub" class="text-sm text-gray-400 mb-6">Adding a new account</p>
+    </div>
+    <span id="status" class="statusbar__msg"></span>
+  </footer>
+
+  <!-- Sign-in sheet -->
+  <div id="login-modal" class="sheet-backdrop hidden">
+    <div class="sheet">
+      <button id="modal-close" class="icon-btn icon-btn--sm sheet__close" title="Close">
+        <i data-lucide="x"></i>
+      </button>
+      <div class="sheet__badge"><i data-lucide="key-round"></i></div>
+      <h2 class="sheet__title">Sign in to Claude</h2>
+      <p id="modal-sub" class="sheet__sub">Adding a new account</p>
 
       <div id="modal-progress">
-        <div class="flex items-center gap-3 text-sm text-gray-300">
-          <span class="w-4 h-4 border-2 border-system-blue border-t-transparent rounded-full animate-spin shrink-0"></span>
+        <div class="progress">
+          <span class="spinner spinner--sm"></span>
           <span id="modal-status">starting claude…</span>
         </div>
-        <div id="modal-urls" class="mt-5 hidden">
-          <div class="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Browser didn’t open?</div>
-          <div id="modal-url-list" class="flex flex-col gap-2"></div>
+        <div id="modal-urls" class="urls hidden">
+          <div class="urls__label">Browser didn’t open?</div>
+          <div id="modal-url-list" class="urls__list"></div>
         </div>
-        <p class="text-xs text-gray-600 mt-6 leading-relaxed">
+        <p class="note">
           Theme and sign-in method are chosen automatically. Finish signing in in the browser — this window closes by
           itself once the account is authenticated.
         </p>
       </div>
 
       <div id="modal-success" class="hidden">
-        <div class="flex items-center gap-3">
-          <div class="w-12 h-12 rounded-full bg-system-green/15 border border-system-green/30 flex items-center justify-center shrink-0">
-            <i data-lucide="check" class="w-6 h-6 text-system-green"></i>
-          </div>
+        <div class="success">
+          <div class="success__icon"><i data-lucide="check"></i></div>
           <div>
-            <div class="font-semibold text-system-green">Signed in</div>
-            <div id="modal-success-email" class="text-sm text-gray-400"></div>
+            <div class="success__title">Signed in</div>
+            <div id="modal-success-email" class="success__email"></div>
           </div>
         </div>
       </div>

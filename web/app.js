@@ -48,35 +48,29 @@ function refreshIcons() {
 // ───────────────────────── cards ─────────────────────────
 
 function metricHtml(name, pct, resetsAt) {
-  const fill =
-    pct != null && pct >= 90
-      ? 'bg-system-red'
-      : 'bg-gradient-to-r from-[#F3EB35] to-[#F99C24]';
+  const high = pct != null && pct >= 90 ? ' bar__fill--high' : '';
   return `
-    <div class="mt-3">
-      <div class="flex items-baseline justify-between gap-2 mb-1.5">
-        <span class="text-sm text-gray-300">${esc(name)}</span>
-        <span class="text-sm font-semibold tabular-nums">${pct == null ? '—' : pct + '%'}</span>
+    <div class="metric">
+      <div class="metric__top">
+        <span class="metric__name">${esc(name)}</span>
+        <span class="metric__pct">${pct == null ? '—' : pct + '%'}</span>
       </div>
-      <div class="h-2 rounded-full bg-white/5 overflow-hidden">
-        <div class="h-full rounded-full ${fill}" style="width:${Math.min(100, pct ?? 0)}%"></div>
+      <div class="bar">
+        <div class="bar__fill${high}" style="width:${Math.min(100, pct ?? 0)}%"></div>
       </div>
-      ${resetsAt ? `<div class="text-xs text-gray-500 mt-1">resets ${esc(resetsAt)}</div>` : ''}
+      ${resetsAt ? `<div class="metric__reset">resets ${esc(resetsAt)}</div>` : ''}
     </div>`;
 }
 
 function badgeHtml(acc) {
   if (acc.loggedIn) {
     return `
-      <span class="inline-flex items-center gap-1.5 text-sm font-medium px-2.5 py-1 rounded-lg bg-system-green/10 border border-system-green/20 text-system-green max-w-full">
-        <span class="w-1.5 h-1.5 rounded-full bg-system-green shrink-0"></span>
-        <span class="truncate">${esc(acc.email || 'signed in')}</span>
+      <span class="badge">
+        <span class="badge__dot"></span>
+        <span class="badge__email">${esc(acc.email || 'signed in')}</span>
       </span>`;
   }
-  return `
-    <span class="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-gray-500">
-      not signed in
-    </span>`;
+  return `<span class="badge badge--out">not signed in</span>`;
 }
 
 function cardHtml(acc) {
@@ -86,8 +80,8 @@ function cardHtml(acc) {
   let body = '';
   if (phase) {
     body += `
-      <div class="flex items-center gap-2 mt-3 text-sm text-gray-400">
-        <span class="w-3.5 h-3.5 border-2 border-system-blue border-t-transparent rounded-full animate-spin shrink-0"></span>
+      <div class="phase">
+        <span class="spinner spinner--sm"></span>
         ${esc(phase)}…
       </div>`;
   }
@@ -97,51 +91,44 @@ function cardHtml(acc) {
         body += metricHtml(s.heading.replace(/^Current\s+/i, ''), s.pct, s.resetsAt);
       }
       if (r.parsed.confidence === 'low') {
-        body += `<div class="text-xs text-system-blue mt-3">low parse confidence — check the raw output</div>`;
+        body += `<div class="hint">low parse confidence — check the raw output</div>`;
       }
     }
     if (r.error) {
-      body += `
-        <div class="bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2 mt-3 text-xs text-red-400">
-          ${esc(r.error)}
-        </div>`;
+      body += `<div class="error">${esc(r.error)}</div>`;
     }
     if (r.raw) {
       body += `
-        <details class="mt-3">
-          <summary class="text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-300 transition-colors">
-            raw output · ${r.durationMs} ms · ${esc(new Date(r.checkedAt).toLocaleTimeString())}
-          </summary>
-          <pre class="mt-2 bg-black/40 border border-white/5 rounded-xl p-3 font-mono text-xs text-gray-300 whitespace-pre-wrap break-words max-h-80 overflow-auto">${esc(r.raw)}</pre>
+        <details class="raw">
+          <summary>raw output · ${r.durationMs} ms · ${esc(new Date(r.checkedAt).toLocaleTimeString())}</summary>
+          <pre>${esc(r.raw)}</pre>
         </details>`;
     }
   } else if (!phase) {
-    body += `<div class="text-sm text-gray-600 mt-3">no check yet</div>`;
+    body += `<div class="phase" style="color: var(--label-3);">no check yet</div>`;
   }
 
-  // Square (1:1) icon buttons: check this account, sign in, delete.
-  const sq =
-    'w-8 h-8 inline-flex items-center justify-center shrink-0 rounded-lg border border-white/10 transition-colors';
+  // Borderless icon buttons: check this account, sign in, delete.
   const actions = `
-    <div class="flex items-center gap-1.5 shrink-0">
-      <button class="check-one-btn ${sq} bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+    <div class="card__actions">
+      <button class="check-one-btn icon-btn icon-btn--sm"
               data-label="${esc(acc.label)}" title="Check usage for this account" ${state.checking.has(acc.label) ? 'disabled' : ''}>
-        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+        <i data-lucide="refresh-cw"></i>
       </button>
-      <button class="login-btn ${sq} bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white"
+      <button class="login-btn icon-btn icon-btn--sm"
               data-label="${esc(acc.label)}" title="Sign in this account">
-        <i data-lucide="log-in" class="w-4 h-4"></i>
+        <i data-lucide="log-in"></i>
       </button>
-      <button class="delete-btn ${sq} bg-white/5 hover:bg-red-500/15 hover:border-red-500/30 text-gray-400 hover:text-red-400"
+      <button class="delete-btn icon-btn icon-btn--sm icon-btn--danger"
               data-label="${esc(acc.label)}" title="Delete account">
-        <i data-lucide="trash-2" class="w-4 h-4"></i>
+        <i data-lucide="trash-2"></i>
       </button>
     </div>`;
 
   return `
-    <article class="glass-panel rounded-2xl p-4 ${state.activeLogin === acc.label && !state.loginDone ? 'ring-1 ring-system-blue/50' : ''}">
-      <div class="flex items-center gap-2">
-        <div class="flex-1 min-w-0">${badgeHtml(acc)}</div>
+    <article class="card ${state.activeLogin === acc.label && !state.loginDone ? 'card--active' : ''}">
+      <div class="card__head">
+        <div style="flex: 1; min-width: 0;">${badgeHtml(acc)}</div>
         ${actions}
       </div>
       ${body}
@@ -152,14 +139,10 @@ function renderCards() {
   const el = $('#cards');
   if (state.accounts.length === 0) {
     el.innerHTML = `
-      <div class="col-span-full flex flex-col items-center gap-4 py-16 text-center">
-        <div class="w-16 h-16 bg-gradient-to-br from-[#F3EB35] to-[#F99C24] rounded-2xl shadow-lg shadow-[#F99C24]/20 flex items-center justify-center">
-          <i data-lucide="users" class="w-8 h-8 text-black"></i>
-        </div>
-        <div>
-          <div class="text-lg font-semibold">No accounts yet</div>
-          <div class="text-sm text-gray-500">Click <span class="text-gray-300 font-medium">Add account</span> in the top-right to get started.</div>
-        </div>
+      <div class="empty">
+        <div class="empty__icon"><i data-lucide="users"></i></div>
+        <div class="empty__title">No accounts yet</div>
+        <div class="empty__sub">Click the <strong>+</strong> button in the top-right to add one.</div>
       </div>`;
   } else {
     el.innerHTML = state.accounts.map(cardHtml).join('');
@@ -253,7 +236,6 @@ async function addAccount() {
 
 function showModal(show) {
   $('#login-modal').classList.toggle('hidden', !show);
-  $('#login-modal').classList.toggle('flex', show);
 }
 
 function setModalStatus(text) {
@@ -287,8 +269,7 @@ function renderModalUrls() {
   $('#modal-url-list').innerHTML = urls
     .map(
       (u) => `
-        <a href="${esc(u)}" target="_blank" rel="noopener noreferrer"
-           class="text-sm text-system-blue hover:underline underline-offset-2 break-all leading-snug">
+        <a href="${esc(u)}" target="_blank" rel="noopener noreferrer">
           ${esc(u.length > 90 ? u.slice(0, 90) + '…' : u)}
         </a>`,
     )
@@ -396,9 +377,7 @@ function applyAuto() {
     state.autoTimer = null;
   }
   const on = $('#auto-toggle').checked;
-  const wrap = $('#auto-interval-wrap');
-  wrap.classList.toggle('opacity-40', !on);
-  wrap.classList.toggle('pointer-events-none', !on);
+  $('#auto-interval-wrap').classList.toggle('is-off', !on);
   if (on) {
     const mins = Math.max(1, parseInt($('#auto-mins').value, 10) || 15);
     state.autoTimer = setInterval(() => runCheck(), mins * 60_000);

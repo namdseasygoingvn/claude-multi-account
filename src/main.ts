@@ -198,7 +198,7 @@ async function addAccountFlow(): Promise<void> {
 // ── Popover window ───────────────────────────────────────────────────────────
 function createWindow(): void {
   win = new BrowserWindow({
-    width: 420,
+    width: 380,
     height: 600,
     show: false,
     frame: false,
