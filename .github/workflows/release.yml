@@ -1,0 +1,63 @@
+name: Build & Release
+
+# Build a release .dmg and publish a GitHub Release on every push to main.
+on:
+  push:
+    branches: [main]
+
+# Needed so the workflow can create tags, releases and upload assets.
+permissions:
+  contents: write
+
+# If you push again while a build is running, cancel the older one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    # Put "[skip release]" in a commit message to skip a build.
+    if: ${{ !contains(github.event.head_commit.message, '[skip release]') }}
+    runs-on: macos-latest   # required to produce a macOS .dmg
+    steps:
+      - name: Checkout (full history for changelog)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so release notes can diff against the previous tag
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compute version (major.minor.<run_number>)
+        id: ver
+        run: |
+          BASE=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
+          VERSION="${BASE}.${{ github.run_number }}"
+          npm pkg set version="$VERSION"   # only touches package.json; not committed
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building v$VERSION"
+
+      - name: Compile TypeScript
+        run: npm run build
+
+      - name: Package macOS .dmg
+        env:
+          # No Apple Developer certificate in CI -> build an unsigned app instead of failing.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder --mac --publish never
+
+      - name: Publish GitHub Release (auto changelog)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: v${{ steps.ver.outputs.version }}
+          generate_release_notes: true   # auto-writes the changelog from commits/PRs since the last release
+          files: |
+            dist-app/*.dmg
+            dist-app/*.zip
