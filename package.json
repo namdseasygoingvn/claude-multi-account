@@ -52,6 +52,8 @@
       "category": "public.app-category.developer-tools",
       "target": "dmg",
       "icon": "assets/icon.png",
+      "identity": "-",
+      "hardenedRuntime": false,
       "extendInfo": {
         "LSUIElement": true
       }

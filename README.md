@@ -12,7 +12,14 @@ A tiny **macOS menu-bar app** that checks the usage quota of **all your Claude a
 2. Open the `.dmg` and drag **Claude Quota Monitor** into your **Applications** folder.
 3. Open it from Applications (or Spotlight). A **gauge icon appears in your menu bar** (top-right).
 
-> **First open is blocked? ("unidentified developer")** The app isn't signed by Apple, so macOS stops it the first time. Fix: **right-click the app → Open → Open**. After that it opens normally. (There's no Dock icon — it's a menu-bar app.)
+> **First open is blocked?** The app is ad-hoc signed but not notarized by Apple, so macOS Gatekeeper stops it the first time.
+> - Usually: **right-click the app → Open → Open**. After that it opens normally.
+> - If macOS instead says it **“is damaged and can’t be opened”**, that's just the download quarantine flag. Clear it once in Terminal, then open normally:
+>   ```bash
+>   xattr -dr com.apple.quarantine "/Applications/Claude Quota Monitor.app"
+>   ```
+>
+> (There's no Dock icon — it's a menu-bar app.)
 
 ### Option B — run it from source
 
@@ -63,4 +70,4 @@ To close the popover, just click anywhere else — it tucks back into the menu b
 - **macOS may ask for Keychain access** the first time it checks an account — click *Always Allow*.
 - This is **unofficial, personal-use automation** of the Claude CLI. It reads the usage panel from a real `claude` session, so a big CLI redesign can break the parsing — it always shows the raw output as a fallback.
 
-For how it's built and the original design notes, see [claude-quota-monitor-plan.md](claude-quota-monitor-plan.md) and the source under `src/`.
+For how it's built, see the source under `src/` (Electron main process) and `web/` (the popover UI).

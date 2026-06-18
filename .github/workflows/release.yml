@@ -47,9 +47,10 @@ jobs:
         run: npm run build
 
       - name: Package macOS .dmg
-        env:
-          # No Apple Developer certificate in CI -> build an unsigned app instead of failing.
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+        # No Apple Developer certificate in CI. mac.identity "-" (in package.json)
+        # ad-hoc signs the whole bundle so macOS doesn't report the app as
+        # "damaged"; users still clear quarantine once (see README) since an
+        # ad-hoc signature isn't notarized for Gatekeeper.
         run: npx electron-builder --mac --publish never
 
       - name: Publish GitHub Release (auto changelog)
