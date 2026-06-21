@@ -172,7 +172,18 @@ function fitWindow() {
       const cut = accts[MAX_VISIBLE_ACCOUNTS - 1].getBoundingClientRect().bottom;
       contentH = cut - top;
     }
-    invoke('win:resize', { height: Math.ceil(chrome + contentH) }).catch(() => {});
+    let target = Math.ceil(chrome + contentH);
+
+    // The sign-in sheet is a fixed overlay centered in the window; if the window
+    // is shorter than the sheet it gets clipped (the body is overflow:hidden).
+    // While it's open, grow the window to fit the sheet (+ the overlay's 14px
+    // top/bottom padding) so nothing is cut off.
+    const modal = document.getElementById('login-modal');
+    if (modal && !modal.classList.contains('hidden')) {
+      const sheet = modal.querySelector('.sheet');
+      if (sheet) target = Math.max(target, Math.ceil(sheet.offsetHeight + 28));
+    }
+    invoke('win:resize', { height: target }).catch(() => {});
   });
 }
 
@@ -243,6 +254,10 @@ async function addAccount() {
   try {
     const data = await invoke('accounts:add', {});
     await loadAccounts();
+    if (data && data.blocked) {
+      setStatus('Claude Code needs updating — use “Repair / update Claude Code” in the menu');
+      return;
+    }
     openLogin(data.account.label);
   } catch (err) {
     setStatus(`add failed: ${err.message}`);
@@ -253,10 +268,12 @@ async function addAccount() {
 
 function showModal(show) {
   $('#login-modal').classList.toggle('hidden', !show);
+  fitWindow(); // grow to fit the sheet when opening; shrink back to the list when closing
 }
 
 function setModalStatus(text) {
   $('#modal-status').textContent = text;
+  fitWindow(); // status text can wrap to more lines — keep the sheet fully visible
 }
 
 async function openLogin(label) {
@@ -273,7 +290,10 @@ async function openLogin(label) {
   showModal(true);
   renderCards();
   try {
-    await invoke('login:start', { label });
+    const res = await invoke('login:start', { label });
+    if (res && res.blocked) {
+      setModalStatus('Claude Code needs updating — fix it from the dialog or the menu, then try again');
+    }
   } catch (err) {
     setModalStatus(`failed to start sign-in: ${err.message}`);
   }
@@ -291,6 +311,7 @@ function renderModalUrls() {
         </a>`,
     )
     .join('');
+  fitWindow(); // the URL list adds height to the sheet
 }
 
 function loginSucceeded(email) {
@@ -299,6 +320,7 @@ function loginSucceeded(email) {
   $('#modal-success').classList.remove('hidden');
   $('#modal-success-email').textContent = email || '';
   refreshIcons();
+  fitWindow(); // success view differs in height from the progress view
   loadAccounts();
   setTimeout(() => {
     if (state.loginDone) {
@@ -353,7 +375,9 @@ function handleWs(m) {
       break;
     case 'login-exit':
       if (m.label === state.activeLogin && !state.loginDone) {
-        setModalStatus(`sign-in session ended (exit ${m.exitCode}) — close and try again`);
+        setModalStatus(
+          `sign-in ended (exit ${m.exitCode}). If this keeps happening, update Claude Code from the menu (“Repair / update Claude Code”).`,
+        );
       }
       loadAccounts();
       break;
@@ -425,4 +449,8 @@ $('#auto-mins').addEventListener('change', () => {
 
 refreshIcons();
 connectEvents();
-loadAccounts();
+// Load accounts, then auto-check usage once so the first quota shows without the
+// user having to click "Check usage".
+loadAccounts().then(() => {
+  if (state.accounts.length) runCheck();
+});

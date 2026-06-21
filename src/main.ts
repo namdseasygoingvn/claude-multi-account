@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, shell } from 'electron';
+import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeImage, screen, shell } from 'electron';
 import fixPath from 'fix-path';
 
 import { REPO_ROOT, setDataRoot } from './paths.js';
@@ -23,6 +23,7 @@ import {
   getAvailableUpdate,
   isDownloading,
 } from './updater.js';
+import { probeClaudeHealth, repairClaude, type ClaudeHealth } from './claude-health.js';
 import type { AccountStatus, UsageResult } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -188,6 +189,7 @@ function buildContextMenu(): Electron.Menu {
       click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
     },
     updateItem,
+    { label: 'Repair / update Claude Code…', click: () => void repairClaudeMenu() },
     { type: 'separator' },
     { label: 'Quit', accelerator: 'Command+Q', click: () => app.quit() },
   ]);
@@ -202,10 +204,108 @@ function setAutoRefresh(minutes: number): void {
   if (minutes > 0) autoTimer = setInterval(() => void runUsageCheck(), minutes * 60_000);
 }
 
+// ── Claude CLI health + self-repair ──────────────────────────────────────────
+// Everything here drives the `claude` binary, so when it's broken (e.g. a
+// truncated update that macOS SIGKILLs on launch) the user just sees logins
+// fail with a cryptic "exit 0". Probe it and offer a one-click reinstall of the
+// latest version instead. Health is cached briefly so one gesture probes once.
+let healthCache: { at: number; health: ClaudeHealth } | null = null;
+let repairing = false;
+
+function cap(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+async function getHealth(maxAgeMs = 8_000): Promise<ClaudeHealth> {
+  const now = Date.now();
+  if (healthCache && now - healthCache.at < maxAgeMs) return healthCache.health;
+  const health = await probeClaudeHealth();
+  healthCache = { at: now, health };
+  return health;
+}
+
+/** Run the npm reinstall, surfacing progress via notifications (+ login modal if any). */
+async function runRepair(progressLabel?: string): Promise<boolean> {
+  if (repairing) return false;
+  repairing = true;
+  const note = (title: string, body: string): void => {
+    if (Notification.isSupported()) new Notification({ title, body }).show();
+  };
+  note('Updating Claude Code', 'Downloading the latest version (~216 MB). This can take a minute.');
+  if (progressLabel) {
+    send('login-status', { label: progressLabel, status: 'updating Claude Code (downloading ~216 MB)' });
+  }
+  const result = await repairClaude((line) => console.log('[repair]', line));
+  healthCache = { at: Date.now(), health: result.health };
+  repairing = false;
+  if (result.ok) {
+    note('Claude Code updated', `Now on v${result.health.version}. You can sign in.`);
+    if (progressLabel) {
+      send('login-status', { label: progressLabel, status: 'Claude Code updated — starting sign-in' });
+      showWindow(); // the repair dialog hid the popover — bring it back so sign-in is visible
+    }
+    return true;
+  }
+  await dialog.showMessageBox({
+    type: 'error',
+    message: "Couldn't update Claude Code automatically",
+    detail: result.error ?? 'Unknown error.',
+    buttons: ['OK'],
+  });
+  return false;
+}
+
+/**
+ * Ensure `claude` is runnable; if not, offer a one-click repair. Returns true
+ * when claude is healthy (or was just repaired). `progressLabel` routes repair
+ * progress to that account's login modal.
+ */
+async function ensureClaudeHealthy(progressLabel?: string): Promise<boolean> {
+  const health = await getHealth();
+  if (health.ok) return true;
+  if (repairing) return false;
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    message: 'Claude Code needs to be updated',
+    detail:
+      `${cap(health.detail)}.\n\n` +
+      'This app signs in and checks usage through the `claude` command, which is not working right now. ' +
+      'Update to the latest Claude Code? (~216 MB download.)',
+    buttons: ['Update now', 'Not now'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response !== 0) return false;
+  return runRepair(progressLabel);
+}
+
+/** Start a login only if claude is healthy; otherwise offer to repair first. */
+async function tryStartLogin(label: string, configDir: string): Promise<boolean> {
+  if (logins.isActive(label)) return true;
+  if (!(await ensureClaudeHealthy(label))) return false;
+  logins.start(label, configDir);
+  return true;
+}
+
+/** Tray "Repair / update Claude Code" — manual trigger with a confirm. */
+async function repairClaudeMenu(): Promise<void> {
+  if (repairing) return;
+  const { response } = await dialog.showMessageBox({
+    type: 'question',
+    message: 'Update Claude Code now?',
+    detail:
+      'Reinstalls the latest Claude Code from npm (~216 MB). Use this if sign-in or usage checks stop working.',
+    buttons: ['Update now', 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response === 0) await runRepair();
+}
+
 async function addAccountFlow(): Promise<void> {
   try {
     const acc = addAccount();
-    logins.start(acc.label, acc.configDir);
+    if (!(await tryStartLogin(acc.label, acc.configDir))) return; // repair declined/failed
     showWindow();
     send('account-added', { label: acc.label }); // renderer opens the login view
   } catch (err) {
@@ -302,14 +402,14 @@ function registerIpc(): void {
     };
   });
 
-  ipcMain.handle('accounts:add', (_e, payload: { label?: string } = {}) => {
+  ipcMain.handle('accounts:add', async (_e, payload: { label?: string } = {}) => {
     const raw = typeof payload?.label === 'string' ? payload.label.trim() : '';
     if (raw && !isValidLabel(raw)) {
       throw new Error('label must be 1–32 chars: letters, digits, dot, dash, underscore');
     }
     const acc = addAccount(raw || undefined);
-    logins.start(acc.label, acc.configDir);
-    return { account: statusOf(acc.label) };
+    const started = await tryStartLogin(acc.label, acc.configDir);
+    return { account: statusOf(acc.label), blocked: !started };
   });
 
   ipcMain.handle('accounts:remove', (_e, payload: { label: string }) => {
@@ -321,12 +421,12 @@ function registerIpc(): void {
     return { ok: true };
   });
 
-  ipcMain.handle('login:start', (_e, payload: { label: string }) => {
+  ipcMain.handle('login:start', async (_e, payload: { label: string }) => {
     const acc = getAccount(payload.label);
     if (!acc) throw new Error(`unknown account "${payload.label}"`);
     const alreadyActive = logins.isActive(acc.label);
-    if (!alreadyActive) logins.start(acc.label, acc.configDir);
-    return { account: statusOf(acc.label), alreadyActive };
+    const started = await tryStartLogin(acc.label, acc.configDir);
+    return { account: statusOf(acc.label), alreadyActive, blocked: !started };
   });
 
   ipcMain.handle('login:stop', (_e, payload: { label: string }) => ({
@@ -386,6 +486,15 @@ app.whenReady().then(() => {
     void checkForUpdates({ notifyOnUpdate: true });
     setInterval(() => void checkForUpdates({ notifyOnUpdate: true }), 6 * 60 * 60 * 1000);
   }
+
+  // Proactively flag a broken/missing claude binary (the app is useless without
+  // it). A click on the notification opens the one-click repair.
+  void getHealth().then((h) => {
+    if (h.ok || !Notification.isSupported()) return;
+    const n = new Notification({ title: 'Claude Code needs attention', body: `${cap(h.detail)}. Click to fix.` });
+    n.on('click', () => void ensureClaudeHealthy());
+    n.show();
+  });
 });
 
 // Menu-bar app: closing the popover must NOT quit the app.

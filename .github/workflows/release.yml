@@ -53,12 +53,45 @@ jobs:
         # ad-hoc signature isn't notarized for Gatekeeper.
         run: npx electron-builder --mac --publish never
 
-      - name: Publish GitHub Release (auto changelog)
+      - name: Build release notes
+        # A concise, human-readable changelog (what actually changed, from commit
+        # subjects since the last release) + a stable install blurb — instead of
+        # GitHub's auto notes, which just link out to the commits/PRs.
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          if [ -n "$PREV_TAG" ]; then RANGE="${PREV_TAG}..HEAD"; else RANGE="HEAD~15..HEAD"; fi
+          echo "Changelog range: $RANGE (prev tag: ${PREV_TAG:-none})"
+          # Commit subjects → clean bullets: drop merges/bumps, strip conventional
+          # prefixes (feat:/fix:/…), cap the list so it stays concise.
+          CHANGES=$(git log "$RANGE" --no-merges --pretty=format:'%s' \
+            | grep -vE '^(Merge |Bump version)' \
+            | sed -E 's/^(feat|fix|chore|docs|refactor|perf|build|ci|test|style|revert)(\([^)]+\))?!?:[[:space:]]*//' \
+            | sed -E 's/^/- /' \
+            | head -n 20 || true)
+          [ -z "$CHANGES" ] && CHANGES="- Maintenance and internal improvements"
+          DMG="Claude Quota Monitor-${VERSION}-arm64.dmg"
+          {
+            echo "Native macOS menu-bar app for watching Claude Code usage quota across multiple accounts."
+            echo
+            echo "## What's new in v${VERSION}"
+            echo "$CHANGES"
+            echo
+            echo "## Install"
+            echo "1. Download **${DMG}** below (Apple Silicon / arm64)."
+            echo "2. Open it and drag the app into **Applications**."
+            echo "3. **First open:** macOS will block it (unsigned) — right-click the app → **Open → Open**. After that it opens normally."
+            echo
+            echo "A **gauge icon** appears in your menu bar (top-right) — there's no Dock icon. Requires the \`claude\` CLI installed."
+          } > RELEASE_NOTES.md
+          echo "----- RELEASE_NOTES.md -----"
+          cat RELEASE_NOTES.md
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.ver.outputs.version }}
           name: v${{ steps.ver.outputs.version }}
-          generate_release_notes: true   # auto-writes the changelog from commits/PRs since the last release
-          files: |
-            dist-app/*.dmg
-            dist-app/*.zip
+          body_path: RELEASE_NOTES.md
+          files: dist-app/*.dmg
