@@ -8,7 +8,7 @@ A tiny **macOS menu-bar app** that checks the usage quota of **all your Claude a
 
 ### Option A — download the app (easiest)
 
-1. Go to **[Releases](https://github.com/namdseasygoingvn/ezg-claude-multi-account/releases/latest)** and download the **`.dmg`** (Apple Silicon / arm64).
+1. Go to **[Releases](https://github.com/namdseasygoingvn/claude-multi-account/releases/latest)** and download the **`.dmg`** (Apple Silicon / arm64).
 2. Open the `.dmg` and drag **Claude Quota Monitor** into your **Applications** folder.
 3. Open it from Applications (or Spotlight). A **gauge icon appears in your menu bar** (top-right).
 
@@ -33,12 +33,16 @@ Run `npm run app` again any time to start it. To build your own `.dmg`, run `npm
 
 Either way, you need the `claude` CLI installed. It's found automatically; if yours lives somewhere unusual, set `CLAUDE_BIN=/path/to/claude` before launching.
 
+### Updating
+
+The app checks **[Releases](https://github.com/namdseasygoingvn/claude-multi-account/releases/latest)** for you — on launch and every few hours. When a newer version is out you get a notification, and the right-click menu shows **Download update vX.Y.Z**. Clicking it downloads the new `.dmg` and opens it; just drag the app into **Applications** to replace the old one. (You no longer have to go hunting for releases.) Because the app — not a browser — fetches the `.dmg`, the new version usually opens without the Gatekeeper "damaged" prompt.
+
 ---
 
 ## Where to click
 
 - **Left-click the menu-bar gauge icon** → opens the popover with your account cards. Hit **Check usage** to refresh all of them.
-- **Right-click the icon** → menu with **Check usage now**, **Auto-refresh** (off / every N min), **Add account…**, **Open at login**, and **Quit**.
+- **Right-click the icon** → menu with **Check usage now**, **Auto-refresh** (off / every N min), **Add account…**, **Open at login**, **Check for updates**, and **Quit**.
 - After a check, the icon shows your **highest usage %** right in the menu bar.
 
 To close the popover, just click anywhere else — it tucks back into the menu bar. The app keeps running until you choose **Quit**.

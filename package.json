@@ -1,5 +1,5 @@
 {
-  "name": "ezg-claude-multi-account",
+  "name": "claude-multi-account",
   "version": "0.1.0",
   "description": "Native macOS menu-bar app that watches Claude Code usage quota across multiple accounts — drives real `claude` REPLs over PTYs and runs /usage for each.",
   "type": "module",

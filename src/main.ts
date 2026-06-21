@@ -17,6 +17,12 @@ import {
 } from './registry.js';
 import { LoginManager } from './logins.js';
 import { checkUsage } from './usage.js';
+import {
+  checkForUpdates,
+  downloadAndInstall,
+  getAvailableUpdate,
+  isDownloading,
+} from './updater.js';
 import type { AccountStatus, UsageResult } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -151,7 +157,18 @@ function updateBadge(): void {
 
 function buildContextMenu(): Electron.Menu {
   const intervals = [0, 5, 15, 30, 60];
+  const update = getAvailableUpdate();
+  const updateItem: Electron.MenuItemConstructorOptions = isDownloading()
+    ? { label: 'Downloading update…', enabled: false }
+    : update
+      ? { label: `Download update ${update.tag}`, click: () => void downloadAndInstall() }
+      : {
+          label: 'Check for updates',
+          click: () => void checkForUpdates({ notifyOnUpdate: true, notifyOnResult: true }),
+        };
   return Menu.buildFromTemplate([
+    { label: `Claude Quota Monitor v${app.getVersion()}`, enabled: false },
+    { type: 'separator' },
     { label: 'Check usage now', click: () => void runUsageCheck() },
     {
       label: 'Auto-refresh',
@@ -170,6 +187,7 @@ function buildContextMenu(): Electron.Menu {
       checked: app.getLoginItemSettings().openAtLogin,
       click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
     },
+    updateItem,
     { type: 'separator' },
     { label: 'Quit', accelerator: 'Command+Q', click: () => app.quit() },
   ]);
@@ -361,6 +379,13 @@ app.whenReady().then(() => {
   tray.on('click', () => toggleWindow());
   tray.on('right-click', () => tray!.popUpContextMenu(buildContextMenu()));
   updateBadge();
+
+  // Auto-update: only in a packaged build (in dev getVersion() is the stale
+  // 0.1.0, which would always look out of date). Check on launch, then every 6h.
+  if (app.isPackaged) {
+    void checkForUpdates({ notifyOnUpdate: true });
+    setInterval(() => void checkForUpdates({ notifyOnUpdate: true }), 6 * 60 * 60 * 1000);
+  }
 });
 
 // Menu-bar app: closing the popover must NOT quit the app.
