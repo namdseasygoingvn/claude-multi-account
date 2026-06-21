@@ -162,7 +162,7 @@ function buildContextMenu(): Electron.Menu {
   const updateItem: Electron.MenuItemConstructorOptions = isDownloading()
     ? { label: 'Downloading update…', enabled: false }
     : update
-      ? { label: `Download update ${update.tag}`, click: () => void downloadAndInstall() }
+      ? { label: `Install update ${update.tag} & restart`, click: () => void downloadAndInstall() }
       : {
           label: 'Check for updates',
           click: () => void checkForUpdates({ notifyOnUpdate: true, notifyOnResult: true }),
