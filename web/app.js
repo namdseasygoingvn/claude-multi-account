@@ -4,6 +4,7 @@ const $ = (sel) => document.querySelector(sel);
 
 const state = {
   accounts: [],
+  activeVSCode: null,
   results: new Map(), // label -> UsageResult
   phases: new Map(), // label -> phase string while a check runs
   urls: new Map(), // label -> [oauth urls]
@@ -98,11 +99,18 @@ function cardHtml(acc) {
     ? `<span class="email">${esc(acc.email || 'signed in')}</span>`
     : `<span class="email off">not signed in</span>`;
 
-  // Borderless trailing actions: check this account, sign in, delete.
+  const vsActive = state.activeVSCode === acc.label;
+  // Borderless trailing actions: check, open CLI as this account, switch VS Code, sign in, delete.
   const actions = `
     <span class="acct-actions">
       <button class="check-one-btn ibtn" data-label="${esc(acc.label)}" title="Check usage for this account" ${state.checking.has(acc.label) ? 'disabled' : ''}>
         <i data-lucide="refresh-cw"></i>
+      </button>
+      <button class="open-cli-btn ibtn" data-label="${esc(acc.label)}" title="Open a new Terminal logged in as this account">
+        <i data-lucide="terminal"></i>
+      </button>
+      <button class="switch-vscode-btn ibtn${vsActive ? ' vs-on' : ''}" data-label="${esc(acc.label)}" title="${vsActive ? 'Active in VS Code — click to reload' : 'Switch VS Code to this account'}">
+        <i data-lucide="code"></i>
       </button>
       <button class="login-btn ibtn" data-label="${esc(acc.label)}" title="Sign in this account">
         <i data-lucide="log-in"></i>
@@ -137,6 +145,12 @@ function renderCards() {
   }
   for (const btn of el.querySelectorAll('.delete-btn')) {
     btn.addEventListener('click', () => deleteAccount(btn.dataset.label));
+  }
+  for (const btn of el.querySelectorAll('.open-cli-btn')) {
+    btn.addEventListener('click', () => openCliFor(btn.dataset.label));
+  }
+  for (const btn of el.querySelectorAll('.switch-vscode-btn')) {
+    btn.addEventListener('click', () => switchVSCodeFor(btn.dataset.label));
   }
   // Expanding/collapsing raw output changes the content height — refit then too.
   for (const d of el.querySelectorAll('details.raw')) {
@@ -199,6 +213,7 @@ async function loadAccounts() {
   try {
     const data = await invoke('accounts:list');
     state.accounts = data.accounts;
+    state.activeVSCode = data.activeVSCode ?? null;
     renderCards();
   } catch (err) {
     setStatus(`failed to load accounts: ${err.message}`);
@@ -247,6 +262,33 @@ async function deleteAccount(label) {
     await loadAccounts();
   } catch (err) {
     setStatus(`delete failed: ${err.message}`);
+  }
+}
+
+async function openCliFor(label) {
+  const acc = state.accounts.find((a) => a.label === label);
+  const name = (acc && acc.email) || label;
+  setStatus(`opening Terminal for ${name}…`);
+  try {
+    await invoke('cli:open', { label });
+    setStatus(`opened Terminal for ${name}`);
+  } catch (err) {
+    setStatus(`open CLI failed: ${err.message}`);
+  }
+}
+
+async function switchVSCodeFor(label) {
+  const acc = state.accounts.find((a) => a.label === label);
+  const name = (acc && acc.email) || label;
+  if (!confirm(`Switch VS Code sign-in to "${name}"?\n\nmacOS may ask for Keychain permission — click "Always Allow". VS Code then reloads to apply.`)) return;
+  setStatus(`switching VS Code to ${name}…`);
+  try {
+    const res = await invoke('vscode:switch', { label });
+    setStatus((res && res.message) || `VS Code switched to ${name}`);
+    await loadAccounts(); // refresh the active marker
+  } catch (err) {
+    setStatus(`switch failed: ${err.message}`);
+    await loadAccounts(); // re-sync the active marker with on-disk truth
   }
 }
 

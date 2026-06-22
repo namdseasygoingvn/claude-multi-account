@@ -7,6 +7,9 @@ dist-app/
 accounts/
 accounts.json
 
+# which account is currently rendered into the shared slot (runtime state)
+switch-state.json
+
 # scratch cwd used by spawned claude REPLs
 .scratch/
 

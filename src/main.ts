@@ -24,6 +24,7 @@ import {
   isDownloading,
 } from './updater.js';
 import { probeClaudeHealth, repairClaude, type ClaudeHealth } from './claude-health.js';
+import { openCli, switchVSCode, getActiveVSCodeLabel } from './switcher.js';
 import type { AccountStatus, UsageResult } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -399,6 +400,7 @@ function registerIpc(): void {
         ...probeLogin(acc),
         loginActive: logins.isActive(acc.label),
       })),
+      activeVSCode: getActiveVSCodeLabel(),
     };
   });
 
@@ -445,6 +447,17 @@ function registerIpc(): void {
   ipcMain.handle('usage:check', async (_e, payload: { labels?: string[] } = {}) => ({
     results: await runUsageCheck(payload?.labels),
   }));
+
+  ipcMain.handle('cli:open', (_e, payload: { label: string }) => {
+    if (!getAccount(payload.label)) throw new Error(`unknown account "${payload.label}"`);
+    openCli(payload.label);
+    return { ok: true };
+  });
+
+  ipcMain.handle('vscode:switch', (_e, payload: { label: string }) => {
+    if (!getAccount(payload.label)) throw new Error(`unknown account "${payload.label}"`);
+    return switchVSCode(payload.label);
+  });
 
   ipcMain.handle('shell:openExternal', (_e, payload: { url: string }) => {
     if (/^https?:/.test(payload?.url ?? '')) void shell.openExternal(payload.url);

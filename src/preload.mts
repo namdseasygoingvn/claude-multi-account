@@ -9,6 +9,8 @@ const INVOKE = new Set([
   'login:stop',
   'login:code',
   'usage:check',
+  'cli:open',
+  'vscode:switch',
   'shell:openExternal',
   'win:resize',
 ]);
