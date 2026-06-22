@@ -86,7 +86,7 @@ jobs:
       # re-download every run and hit BOTH the install and package steps. Cache them.
       - name: Cache Electron & electron-builder downloads (Windows)
         if: matrix.os == 'windows-latest'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~\AppData\Local\electron\Cache
