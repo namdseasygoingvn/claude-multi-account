@@ -73,7 +73,15 @@ jobs:
       # on the runner BEFORE we package it — the one Windows-native risk in this app.
       - name: Smoke-test node-pty under Electron (Windows)
         if: matrix.os == 'windows-latest'
-        run: npx electron scripts/smoke-pty.cjs
+        shell: bash
+        run: |
+          # node-pty spawns a ConPTY console-list helper that throws "AttachConsole
+          # failed" in a console-less CI step — it can taint the process exit code
+          # even when the PTY itself works fine. So gate on our success sentinel
+          # (printed only after pty.spawn succeeds and yields output), not on the
+          # exit code, which the helper's crash makes unreliable here.
+          npx electron scripts/smoke-pty.cjs 2>&1 | tee smoke.out
+          grep -q "node-pty OK under Electron" smoke.out
 
       - name: Package installer
         # No code-signing certificate in CI (mac uses identity "-"; Windows is
