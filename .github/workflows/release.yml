@@ -82,7 +82,7 @@ jobs:
         run: npx electron-builder ${{ matrix.args }} --publish never
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.glob }}
@@ -99,7 +99,7 @@ jobs:
           fetch-depth: 0   # full history so release notes can diff against the previous tag
 
       - name: Download built installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true   # collapse every artifact into one flat dir
