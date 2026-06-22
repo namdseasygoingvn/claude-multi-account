@@ -229,7 +229,7 @@ export function switchVSCode(label: string): SwitchResult {
   };
 }
 
-function isVSCodeRunning(): boolean {
+export function isVSCodeRunning(): boolean {
   return spawnSync('/usr/bin/pgrep', ['-f', 'Visual Studio Code']).status === 0;
 }
 

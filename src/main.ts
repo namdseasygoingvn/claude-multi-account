@@ -24,7 +24,7 @@ import {
   isDownloading,
 } from './updater.js';
 import { probeClaudeHealth, repairClaude, type ClaudeHealth } from './claude-health.js';
-import { openCli, switchVSCode, getActiveVSCodeLabel } from './switcher.js';
+import { openCli, switchVSCode, getActiveVSCodeLabel, isVSCodeRunning } from './switcher.js';
 import type { AccountConfig, AccountStatus, UsageResult } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -119,6 +119,38 @@ async function mapPooled<T, R>(items: T[], limit: number, fn: (item: T) => Promi
 }
 
 /**
+ * The email VS Code's extension currently holds, or null. While VS Code is
+ * running and signed into an account, the extension continuously polls THAT
+ * account's usage endpoint, so the monitor's /usage for the same account is
+ * rate-limited no matter how long we wait. Keyed by email (not label) because
+ * the same account can be registered under several labels/config dirs.
+ */
+function vsCodeHeldEmail(): string | null {
+  const label = getActiveVSCodeLabel();
+  if (!label || !isVSCodeRunning()) return null;
+  const acc = getAccount(label);
+  return acc ? probeLogin(acc).email : null;
+}
+
+/** A synthesized "can't read this live" result for an account VS Code holds. */
+function heldByVSCodeResult(acc: AccountConfig): UsageResult {
+  const prior = lastResults.get(acc.label);
+  return {
+    label: acc.label,
+    checkedAt: new Date().toISOString(),
+    ok: false,
+    loggedIn: true,
+    rateLimited: false,
+    heldByVSCode: true,
+    parsed: prior?.parsed ?? null, // keep the last-known bars if we have them
+    raw: '',
+    error:
+      "active in VS Code — its extension is using this account's usage endpoint, so live usage can't be read here. Switch VS Code to another account to refresh it.",
+    durationMs: 0,
+  };
+}
+
+/**
  * Fan out /usage over the given labels (or all). The same Anthropic account can
  * be registered under multiple labels/config dirs (e.g. ~/.claude plus an
  * accounts/<x> copy of the same login); they share ONE per-account usage
@@ -146,8 +178,30 @@ async function runUsageCheck(labels?: string[]): Promise<UsageResult[]> {
     else groups.set(key, [acc]);
   }
 
+  const heldEmail = vsCodeHeldEmail();
+  const apply = (results: UsageResult[]): void => {
+    for (const result of results) {
+      lastResults.set(result.label, result);
+      send('usage-result', { result });
+    }
+    updateBadge();
+  };
+
   try {
-    const perGroup = await mapPooled([...groups.values()], USAGE_CHECK_CONCURRENCY, async (group) => {
+    const out: UsageResult[] = [];
+    const liveGroups: AccountConfig[][] = [];
+    for (const [key, group] of groups) {
+      // VS Code is polling this exact account; a live check is guaranteed to be
+      // rate-limited, so skip the doomed spawn and report it plainly instead.
+      if (heldEmail && key === heldEmail) {
+        const results = group.map(heldByVSCodeResult);
+        apply(results);
+        out.push(...results);
+      } else {
+        liveGroups.push(group);
+      }
+    }
+    const liveResults = await mapPooled(liveGroups, USAGE_CHECK_CONCURRENCY, async (group) => {
       const run = await checkUsage(group[0], {
         // mirror progress to every label sharing this account so all cards animate
         onPhase: (phase) => {
@@ -156,14 +210,11 @@ async function runUsageCheck(labels?: string[]): Promise<UsageResult[]> {
       });
       // One real check, applied under each label that resolves to this account.
       const results = group.map((acc) => ({ ...run, label: acc.label }));
-      for (const result of results) {
-        lastResults.set(result.label, result);
-        send('usage-result', { result });
-      }
-      updateBadge();
+      apply(results);
       return results;
     });
-    return perGroup.flat();
+    out.push(...liveResults.flat());
+    return out;
   } finally {
     for (const l of labelsRun) checking.delete(l);
     send('check-done', { labels: labelsRun });

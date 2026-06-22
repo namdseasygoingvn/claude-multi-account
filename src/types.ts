@@ -51,4 +51,10 @@ export interface UsageRun {
 export interface UsageResult extends UsageRun {
   label: string;
   checkedAt: string;
+  /**
+   * true when the live check was skipped because VS Code's extension currently
+   * holds this account — it polls the same per-account usage endpoint, so a
+   * live /usage here would just be rate-limited. The UI renders this calmly.
+   */
+  heldByVSCode?: boolean;
 }

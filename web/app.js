@@ -81,7 +81,8 @@ function cardHtml(acc) {
       }
     }
     if (r.error) {
-      body += `<div class="err">${esc(r.error)}</div>`;
+      // The VS-Code-held state is expected, not a failure — render it calmly.
+      body += `<div class="${r.heldByVSCode ? 'hint' : 'err'}">${esc(r.error)}</div>`;
     }
     if (r.raw) {
       body += `
