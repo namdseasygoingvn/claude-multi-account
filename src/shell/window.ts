@@ -8,6 +8,15 @@ import type { AppContext } from '../context.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const IS_MAC = process.platform === 'darwin';
 
+// The popover's width is fixed by design; only its height tracks the content.
+// Never read the width back from the window to re-apply it: on Windows a
+// frameless, non-resizable window can report a slightly smaller logical width
+// than was set (frameless content-vs-outer + fractional display scaling), and
+// since every fit re-applied whatever it read, that error ratcheted the popover
+// down into a tall, unreadable sliver over successive fits. macOS was fine (the
+// round-trip is exact there). Pinning the width makes it immune on every OS.
+const POPOVER_WIDTH = 340;
+
 export interface WindowController {
   /** Create the popover BrowserWindow and store it on ctx.win. */
   create(): void;
@@ -56,21 +65,22 @@ export function createWindowController(ctx: AppContext): WindowController {
 
   function resize(height: number): void {
     if (!ctx.win) return;
-    const [w] = ctx.win.getSize();
     const desired = Math.round(height);
     if (!Number.isFinite(desired) || desired < 80) return;
-    // Cap to the work area height, then let position() place it on-screen. Doing
-    // both keeps the popover flush with the tray on either platform: re-anchoring
-    // is a no-op on macOS (the menu-bar tray doesn't move) and keeps the bottom
-    // edge pinned above the taskbar on Windows as the content height changes.
+    // Width is always the design width (never read back — see POPOVER_WIDTH); only
+    // the height tracks content. Cap the height to the work area, then let
+    // position() place it on-screen. Doing both keeps the popover flush with the
+    // tray on either platform: re-anchoring is a no-op on macOS (the menu-bar tray
+    // doesn't move) and keeps the bottom edge pinned above the taskbar on Windows
+    // as the content height changes.
     const area = screen.getDisplayNearestPoint(ctx.win.getBounds()).workArea;
-    ctx.win.setSize(w, Math.min(desired, area.height - 8), false);
+    ctx.win.setSize(POPOVER_WIDTH, Math.min(desired, area.height - 8), false);
     position();
   }
 
   function create(): void {
     const base: Electron.BrowserWindowConstructorOptions = {
-      width: 340,
+      width: POPOVER_WIDTH,
       height: 360, // initial only — the renderer fits the window to its content
 
       show: false,

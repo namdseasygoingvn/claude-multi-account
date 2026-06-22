@@ -1,12 +1,15 @@
 // ── Auto-update (notify + one-click install) ─────────────────────────────────
-// The app is ad-hoc signed, not notarized, so Squirrel.Mac-style silent in-place
-// updates aren't reliable (every build gets a different signing identity). Instead
-// we poll the GitHub Releases API, and when a newer version exists we surface it
-// in the tray menu + a native notification. One click downloads the new .dmg and
-// installs it in place — quit, swap the bundle, relaunch — so there's no Finder
-// "replace?"/"in use" dialog and no manual drag-to-Applications. Because the app
-// (not a browser) fetched the .dmg, the swapped bundle has no quarantine flag, so
-// the relaunched version also skips the Gatekeeper prompt.
+// Neither platform gets a code-signing cert in CI, so the framework auto-updaters
+// (Squirrel.Mac / NSIS differential) aren't reliable here. Instead we poll the
+// GitHub Releases API, and when a newer version exists we surface it in the tray
+// menu + a native notification. One click downloads THIS platform's installer and
+// runs it:
+//   • macOS   — mount the .dmg and swap the .app bundle in place, then relaunch,
+//     so there's no Finder "replace?"/"in use" dialog and no drag-to-Applications.
+//     Because the app (not a browser) fetched the .dmg, the swapped bundle carries
+//     no quarantine flag, so the relaunch also skips the Gatekeeper prompt.
+//   • Windows — launch the per-user NSIS setup .exe (no UAC) and quit so it can
+//     replace the running app's files; its finish step relaunches the new version.
 import { execFile, spawn } from 'node:child_process';
 import { constants as fsConstants, createWriteStream } from 'node:fs';
 import { access, mkdir, readdir, writeFile } from 'node:fs/promises';
@@ -28,8 +31,9 @@ const UA = `${REPO}-updater`;
 export interface UpdateInfo {
   version: string; // semver without the leading "v", e.g. "0.1.50"
   tag: string; // the release tag, e.g. "v0.1.50"
-  htmlUrl: string; // release page (fallback if no .dmg asset is found)
-  dmgUrl: string | null; // direct download URL of the matching .dmg
+  htmlUrl: string; // release page (fallback if no matching asset is found)
+  assetUrl: string | null; // direct download URL of THIS platform's installer (.dmg / .exe)
+  assetName: string | null; // its filename — drives the temp path + which install flow runs
 }
 
 let available: UpdateInfo | null = null;
@@ -60,17 +64,26 @@ function cmpVersion(a: string, b: string): number {
   return 0;
 }
 
-/** Pick the .dmg asset matching this Mac's architecture (falls back to any .dmg). */
-function pickDmg(assets: Array<{ name?: string; browser_download_url?: string }>): string | null {
-  const dmgs = assets.filter((a) => a.name?.toLowerCase().endsWith('.dmg'));
-  if (dmgs.length === 0) return null;
+/**
+ * Pick the release asset for THIS OS + arch: a `.dmg` on macOS, the NSIS setup
+ * `.exe` on Windows. Matches the arch token in the filename, falling back to any
+ * asset of the right type (single-arch releases don't tag the name). Returns both
+ * the URL and the published filename (the name encodes arch/"-setup").
+ */
+function pickAsset(
+  assets: Array<{ name?: string; browser_download_url?: string }>,
+): { url: string; name: string } | null {
+  const ext = process.platform === 'win32' ? '.exe' : '.dmg';
+  const cands = assets.filter((a) => a.name?.toLowerCase().endsWith(ext));
+  if (cands.length === 0) return null;
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
   const alt = arch === 'x64' ? 'x86_64' : 'aarch64';
-  const match = dmgs.find((a) => {
+  const match = cands.find((a) => {
     const n = a.name!.toLowerCase();
     return n.includes(arch) || n.includes(alt);
   });
-  return (match ?? dmgs[0]).browser_download_url ?? null;
+  const chosen = match ?? cands[0];
+  return chosen.browser_download_url ? { url: chosen.browser_download_url, name: chosen.name ?? '' } : null;
 }
 
 function notify(title: string, body: string, onClick?: () => void): void {
@@ -122,11 +135,13 @@ export async function checkForUpdates(opts: CheckOpts = {}): Promise<UpdateInfo 
     return null;
   }
 
+  const asset = pickAsset(json.assets ?? []);
   available = {
     version: remote,
     tag,
     htmlUrl: String(json.html_url ?? `https://github.com/${OWNER}/${REPO}/releases/latest`),
-    dmgUrl: pickDmg(json.assets ?? []),
+    assetUrl: asset?.url ?? null,
+    assetName: asset?.name ?? null,
   };
   onChange?.();
   if (opts.notifyOnUpdate) {
@@ -222,33 +237,69 @@ async function applyUpdateMac(dmgPath: string): Promise<boolean> {
   return true;
 }
 
-/** Download the new .dmg, then install it in place and relaunch. */
+/**
+ * Windows: run the downloaded NSIS installer, then quit so it can replace the
+ * running app's files. The installer is per-user (no UAC) and assisted — its
+ * finish step relaunches the new version (the "Run …" box is checked by default).
+ * We quit right after launching it so nothing is file-locked and it won't show an
+ * "app is still running" page. Returns true once the installer is launched (we're
+ * about to quit); false to fall back to opening the file for the user.
+ */
+async function applyUpdateWindows(exePath: string): Promise<boolean> {
+  if (process.platform !== 'win32' || !app.isPackaged) return false;
+
+  notify('Installing update', `Updating to ${available?.tag ?? 'the latest version'} and restarting…`);
+  installing = true;
+  try {
+    // detached + unref so the installer outlives our process; spawn (no shell)
+    // passes the path as a single argv element, so spaces in the name are safe.
+    spawn(exePath, [], { detached: true, stdio: 'ignore' }).unref();
+  } catch {
+    installing = false;
+    return false;
+  }
+  // Let the notification render, then quit so the installer can swap files.
+  setTimeout(() => app.quit(), 500);
+  return true;
+}
+
+/** Download this platform's installer, then run it (install in place + relaunch). */
 export async function downloadAndInstall(): Promise<void> {
   const info = available;
   if (!info || downloading || installing) return;
 
-  // No .dmg asset (shouldn't happen) → just open the release page.
-  if (!info.dmgUrl) {
+  // No installer asset for this platform → just open the release page.
+  if (!info.assetUrl) {
     await shell.openExternal(info.htmlUrl);
     return;
   }
 
+  const isWin = process.platform === 'win32';
   downloading = true;
   onChange?.();
   try {
-    const dmgPath = path.join(os.tmpdir(), `ClaudeQuotaMonitor-${info.version}.dmg`);
-    const res = await fetch(info.dmgUrl, { headers: { 'User-Agent': UA } });
+    // Keep the published filename (it encodes the arch + "-setup"); fall back to
+    // a platform-correct extension if the API somehow omitted the name.
+    const fileName = info.assetName || `ClaudeQuotaMonitor-${info.version}${isWin ? '.exe' : '.dmg'}`;
+    const filePath = path.join(os.tmpdir(), fileName);
+    const res = await fetch(info.assetUrl, { headers: { 'User-Agent': UA } });
     if (!res.ok || !res.body) throw new Error(`download failed: ${res.status}`);
     // Bridge the web ReadableStream from fetch() to a Node stream for piping.
-    await pipeline(Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]), createWriteStream(dmgPath));
+    await pipeline(Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]), createWriteStream(filePath));
 
-    // Preferred: install it ourselves and relaunch — no Finder dialogs, no drag.
-    if (await applyUpdateMac(dmgPath)) return;
+    // Preferred: install it ourselves and relaunch — no Finder/Explorer dialogs.
+    const applied = isWin ? await applyUpdateWindows(filePath) : await applyUpdateMac(filePath);
+    if (applied) return;
 
-    // Fallback (not packaged / no write access / unexpected layout): open the
-    // dmg so the user can drag it in manually.
-    notify('Update downloaded', 'Opening the installer — drag the app into Applications to finish.');
-    await shell.openPath(dmgPath);
+    // Fallback (not packaged / no write access / unexpected layout): hand the
+    // downloaded installer to the OS so the user can finish manually.
+    notify(
+      'Update downloaded',
+      isWin
+        ? 'Opening the installer to finish updating.'
+        : 'Opening the installer — drag the app into Applications to finish.',
+    );
+    await shell.openPath(filePath);
   } catch {
     // Last resort: open the release page so the user can grab it manually.
     notify('Update failed', 'Opening the release page so you can download it manually.');
