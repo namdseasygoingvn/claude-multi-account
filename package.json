@@ -21,6 +21,7 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "electron-updater": "^6.6.2",
     "fix-path": "^5.0.0",
     "node-pty": "^1.0.0",
     "strip-ansi": "^7.1.0"
@@ -39,6 +40,13 @@
     "directories": {
       "output": "dist-app"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "namdseasygoingvn",
+        "repo": "claude-multi-account"
+      }
+    ],
     "files": [
       "dist/**",
       "web/**",
@@ -71,7 +79,7 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "${productName}-${version}-${arch}-setup.${ext}"
+      "artifactName": "ClaudeQuotaMonitor-${version}-${arch}-setup.${ext}"
     }
   }
 }

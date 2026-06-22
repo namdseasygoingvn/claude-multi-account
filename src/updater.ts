@@ -1,15 +1,16 @@
-// ── Auto-update (notify + one-click install) ─────────────────────────────────
-// Neither platform gets a code-signing cert in CI, so the framework auto-updaters
-// (Squirrel.Mac / NSIS differential) aren't reliable here. Instead we poll the
-// GitHub Releases API, and when a newer version exists we surface it in the tray
-// menu + a native notification. One click downloads THIS platform's installer and
-// runs it:
-//   • macOS   — mount the .dmg and swap the .app bundle in place, then relaunch,
-//     so there's no Finder "replace?"/"in use" dialog and no drag-to-Applications.
-//     Because the app (not a browser) fetched the .dmg, the swapped bundle carries
-//     no quarantine flag, so the relaunch also skips the Gatekeeper prompt.
-//   • Windows — launch the per-user NSIS setup .exe (no UAC) and quit so it can
-//     replace the running app's files; its finish step relaunches the new version.
+// ── Auto-update (silent check → silent download → one-click install) ──────────
+// Each platform updates differently, behind one shared API (checkForUpdates /
+// downloadAndInstall / getAvailableUpdate / isDownloading):
+//   • Windows — electron-updater (NSIS). It silently checks GitHub Releases,
+//     auto-downloads in the background, and on click installs silently + relaunches
+//     (quitAndInstall). Works unsigned. The release must carry `latest.yml` +
+//     the installer's `.blockmap` (the release workflow uploads them).
+//   • macOS   — there's no code-signing cert in CI, and Squirrel.Mac refuses to
+//     apply unsigned updates, so electron-updater can't help here. We keep a DIY
+//     flow: poll the Releases API, then mount the .dmg and swap the .app bundle in
+//     place and relaunch — no Finder "replace?"/"in use" dialog, no drag-to-
+//     Applications. Because the app (not a browser) fetched the .dmg, the swapped
+//     bundle carries no quarantine flag, so the relaunch also skips Gatekeeper.
 import { execFile, spawn } from 'node:child_process';
 import { constants as fsConstants, createWriteStream } from 'node:fs';
 import { access, mkdir, readdir, writeFile } from 'node:fs/promises';
@@ -19,8 +20,12 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import { app, Notification, shell } from 'electron';
+// electron-updater is CommonJS; this is the documented ESM import shape.
+import electronUpdater from 'electron-updater';
 
+const { autoUpdater } = electronUpdater;
 const execFileP = promisify(execFile);
+const isWindows = process.platform === 'win32';
 
 // The GitHub repo that publishes releases (see .github/workflows/release.yml).
 const OWNER = 'namdseasygoingvn';
@@ -40,6 +45,13 @@ let available: UpdateInfo | null = null;
 let downloading = false;
 let installing = false; // a relaunch has been scheduled — block re-entry
 let onChange: (() => void) | null = null;
+
+// Windows (electron-updater) only: set once the installer is downloaded and
+// staged, so downloadAndInstall() knows to quitAndInstall rather than re-fetch.
+let readyToInstall = false;
+// Whether the in-flight Windows check should surface a notification when the
+// update finishes downloading (set per checkForUpdates call).
+let notifyWhenReady = false;
 
 /** Current update state for the tray menu. */
 export function getAvailableUpdate(): UpdateInfo | null {
@@ -100,8 +112,116 @@ interface CheckOpts {
   notifyOnResult?: boolean;
 }
 
-/** Poll GitHub for the latest release and update module state. */
+/**
+ * Map electron-updater's UpdateInfo onto our shared shape. On Windows we don't
+ * carry an asset URL/name — electron-updater owns the download + install.
+ */
+function toUpdateInfoEU(info: { version: string }): UpdateInfo {
+  const version = String(info.version).replace(/^v/, '');
+  return {
+    version,
+    tag: `v${version}`,
+    htmlUrl: `https://github.com/${OWNER}/${REPO}/releases/tag/v${version}`,
+    assetUrl: null,
+    assetName: null,
+  };
+}
+
+// Wire electron-updater's event stream onto our module state exactly once. We
+// keep autoDownload off and drive downloadUpdate() ourselves so the tray can
+// show a "Downloading…" → "Install & restart" progression and a manual check can
+// report "up to date" without a surprise background fetch.
+let winWired = false;
+function ensureWinUpdater(): void {
+  if (winWired) return;
+  winWired = true;
+  autoUpdater.autoDownload = false; // we call downloadUpdate() on demand
+  autoUpdater.autoInstallOnAppQuit = true; // also apply a staged update on a normal quit
+  autoUpdater.on('update-available', (info) => {
+    available = toUpdateInfoEU(info);
+    readyToInstall = false;
+    onChange?.();
+  });
+  autoUpdater.on('download-progress', () => {
+    if (!downloading) {
+      downloading = true;
+      onChange?.();
+    }
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    available = toUpdateInfoEU(info);
+    downloading = false;
+    readyToInstall = true;
+    onChange?.();
+    if (notifyWhenReady) {
+      notify(
+        'Update ready',
+        `Claude Quota Monitor ${available.tag} is ready — click to restart and install.`,
+        () => void downloadAndInstall(),
+      );
+    }
+  });
+  autoUpdater.on('update-not-available', () => {
+    if (available) {
+      available = null;
+      readyToInstall = false;
+      onChange?.();
+    }
+  });
+  autoUpdater.on('error', () => {
+    // An environmental hiccup (offline, GitHub blip) shouldn't wedge the UI in
+    // "Downloading…": drop back so the tray offers "Check for updates" again.
+    downloading = false;
+    onChange?.();
+  });
+}
+
+/**
+ * Windows path: electron-updater checks GitHub Releases and, when a newer version
+ * exists, silently downloads it in the background. State + notifications flow
+ * through the event handlers wired in ensureWinUpdater().
+ */
+async function checkForUpdatesWindows(opts: CheckOpts): Promise<UpdateInfo | null> {
+  // No update feed in dev — app-update.yml ships only inside the packaged app.
+  if (!app.isPackaged) return null;
+  ensureWinUpdater();
+  notifyWhenReady = !!opts.notifyOnUpdate;
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    const info = result?.updateInfo;
+    if (!info || cmpVersion(String(info.version).replace(/^v/, ''), app.getVersion()) <= 0) {
+      if (opts.notifyOnResult) {
+        notify("You're up to date", `Claude Quota Monitor v${app.getVersion()} is the latest version.`);
+      }
+      return null;
+    }
+    available = toUpdateInfoEU(info);
+    onChange?.();
+    // Kick off the silent download now; update-downloaded flips us to "ready".
+    if (!downloading && !readyToInstall) {
+      downloading = true;
+      onChange?.();
+      autoUpdater.downloadUpdate().catch(() => {
+        downloading = false;
+        onChange?.();
+      });
+    }
+    return available;
+  } catch {
+    if (opts.notifyOnResult) {
+      notify('Update check failed', "Couldn't reach GitHub. Check your connection and try again.");
+    }
+    return null;
+  }
+}
+
+/** Check for a newer release and update module state (platform-dispatched). */
 export async function checkForUpdates(opts: CheckOpts = {}): Promise<UpdateInfo | null> {
+  return isWindows ? checkForUpdatesWindows(opts) : checkForUpdatesMac(opts);
+}
+
+/** macOS: poll the GitHub Releases API directly (see module header for why). */
+async function checkForUpdatesMac(opts: CheckOpts): Promise<UpdateInfo | null> {
   let json: {
     tag_name?: string;
     html_url?: string;
@@ -238,33 +358,40 @@ async function applyUpdateMac(dmgPath: string): Promise<boolean> {
 }
 
 /**
- * Windows: run the downloaded NSIS installer, then quit so it can replace the
- * running app's files. The installer is per-user (no UAC) and assisted — its
- * finish step relaunches the new version (the "Run …" box is checked by default).
- * We quit right after launching it so nothing is file-locked and it won't show an
- * "app is still running" page. Returns true once the installer is launched (we're
- * about to quit); false to fall back to opening the file for the user.
+ * Windows: apply the update electron-updater has already staged — install
+ * silently and relaunch (quitAndInstall: isSilent=true, forceRunAfter=true), no
+ * NSIS wizard, no UAC (per-user install). If the click lands before the silent
+ * background download has finished, start/await it instead; update-downloaded
+ * then notifies the user it's ready.
  */
-async function applyUpdateWindows(exePath: string): Promise<boolean> {
-  if (process.platform !== 'win32' || !app.isPackaged) return false;
+async function downloadAndInstallWindows(): Promise<void> {
+  if (!app.isPackaged || installing) return;
+  ensureWinUpdater();
 
-  notify('Installing update', `Updating to ${available?.tag ?? 'the latest version'} and restarting…`);
-  installing = true;
-  try {
-    // detached + unref so the installer outlives our process; spawn (no shell)
-    // passes the path as a single argv element, so spaces in the name are safe.
-    spawn(exePath, [], { detached: true, stdio: 'ignore' }).unref();
-  } catch {
-    installing = false;
-    return false;
+  if (readyToInstall) {
+    installing = true;
+    notify('Installing update', `Updating to ${available?.tag ?? 'the latest version'} and restarting…`);
+    // Let the notification render, then install silently and relaunch.
+    setTimeout(() => autoUpdater.quitAndInstall(true /* isSilent */, true /* forceRunAfter */), 500);
+    return;
   }
-  // Let the notification render, then quit so the installer can swap files.
-  setTimeout(() => app.quit(), 500);
-  return true;
+
+  // Not staged yet — make sure the download is running and surface it when ready.
+  if (!downloading) {
+    notifyWhenReady = true;
+    downloading = true;
+    onChange?.();
+    autoUpdater.downloadUpdate().catch(() => {
+      downloading = false;
+      onChange?.();
+    });
+  }
 }
 
-/** Download this platform's installer, then run it (install in place + relaunch). */
+/** Install the available update for this platform (install in place + relaunch). */
 export async function downloadAndInstall(): Promise<void> {
+  if (isWindows) return downloadAndInstallWindows();
+
   const info = available;
   if (!info || downloading || installing) return;
 
@@ -274,31 +401,25 @@ export async function downloadAndInstall(): Promise<void> {
     return;
   }
 
-  const isWin = process.platform === 'win32';
   downloading = true;
   onChange?.();
   try {
     // Keep the published filename (it encodes the arch + "-setup"); fall back to
     // a platform-correct extension if the API somehow omitted the name.
-    const fileName = info.assetName || `ClaudeQuotaMonitor-${info.version}${isWin ? '.exe' : '.dmg'}`;
+    const fileName = info.assetName || `ClaudeQuotaMonitor-${info.version}.dmg`;
     const filePath = path.join(os.tmpdir(), fileName);
     const res = await fetch(info.assetUrl, { headers: { 'User-Agent': UA } });
     if (!res.ok || !res.body) throw new Error(`download failed: ${res.status}`);
     // Bridge the web ReadableStream from fetch() to a Node stream for piping.
     await pipeline(Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]), createWriteStream(filePath));
 
-    // Preferred: install it ourselves and relaunch — no Finder/Explorer dialogs.
-    const applied = isWin ? await applyUpdateWindows(filePath) : await applyUpdateMac(filePath);
+    // Preferred: install it ourselves and relaunch — no Finder dialogs.
+    const applied = await applyUpdateMac(filePath);
     if (applied) return;
 
     // Fallback (not packaged / no write access / unexpected layout): hand the
     // downloaded installer to the OS so the user can finish manually.
-    notify(
-      'Update downloaded',
-      isWin
-        ? 'Opening the installer to finish updating.'
-        : 'Opening the installer — drag the app into Applications to finish.',
-    );
+    notify('Update downloaded', 'Opening the installer — drag the app into Applications to finish.');
     await shell.openPath(filePath);
   } catch {
     // Last resort: open the release page so the user can grab it manually.

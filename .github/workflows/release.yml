@@ -47,7 +47,13 @@ jobs:
           - os: windows-latest    # required to produce a Windows .exe (native node-pty x64)
             args: "--win --x64"
             artifact: win-setup
-            glob: dist-app/*-setup.exe
+            # The installer PLUS electron-updater's manifest (latest.yml) and the
+            # installer's .blockmap — the app's Windows auto-updater needs all three
+            # in the release to detect + differentially download updates.
+            glob: |
+              dist-app/*-setup.exe
+              dist-app/*-setup.exe.blockmap
+              dist-app/latest.yml
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
