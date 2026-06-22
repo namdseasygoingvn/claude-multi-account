@@ -37,6 +37,7 @@
   "build": {
     "appId": "vn.easygoing.claudequota",
     "productName": "Claude Quota Monitor",
+    "npmRebuild": false,
     "directories": {
       "output": "dist-app"
     },
