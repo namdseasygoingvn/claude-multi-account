@@ -1,18 +1,29 @@
+// [Switch VS Code] — render an account into the shared slot the VS Code
+// extension reads, then ask VS Code to reload. The slot bookkeeping (active-
+// account tracking, oauthAccount metadata, migration) lives in vscode-slot.ts;
+// opening a standalone CLI window lives in cli-launch.ts. This file is the
+// switch flow plus the VS Code reload helpers.
 import { spawnSync } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { getDataRoot } from './paths.js';
-import { loadRegistry, saveRegistry, ensureOnboarded } from './registry.js';
+import { loadRegistry } from './registry.js';
+import { sharedSlotService, serviceForConfigDir, copySecret } from './keychain.js';
+import {
+  SHARED_STATE_FILE,
+  ensureAccountsMigrated,
+  emailForConfigDir,
+  getActiveVSCodeLabel,
+  readOAuthAccount,
+  setActiveVSCodeLabel,
+  stateFileForConfigDir,
+  writeOAuthAccount,
+} from './vscode-slot.js';
 
-const HOME = os.homedir();
-/** The shared slot's metadata file: the sibling of ~/.claude, not inside it. */
-const SHARED_STATE_FILE = path.join(HOME, '.claude.json');
+// Preserve the historical import surface: callers still reach getActiveVSCodeLabel
+// and openCli through switcher.js.
+export { getActiveVSCodeLabel } from './vscode-slot.js';
+export { openCli } from './cli-launch.js';
+
 /** Command-palette shortcut to quote in "reload VS Code manually" messages. */
 const RELOAD_SHORTCUT = process.platform === 'darwin' ? '⌘⇧P' : 'Ctrl+Shift+P';
-
-// Re-derive these here to avoid a circular import surface; keep in sync with keychain.ts.
-import { sharedSlotService, serviceForConfigDir, copySecret } from './keychain.js';
 
 export interface SwitchResult {
   ok: boolean;
@@ -21,197 +32,6 @@ export interface SwitchResult {
   message: string;
 }
 
-// ── active VS Code account tracking ────────────────────────────────────────
-function stateFile(): string {
-  return path.join(getDataRoot(), 'switch-state.json');
-}
-
-export function getActiveVSCodeLabel(): string | null {
-  try {
-    const s = JSON.parse(fs.readFileSync(stateFile(), 'utf8'));
-    return typeof s?.activeVSCode === 'string' ? s.activeVSCode : null;
-  } catch {
-    return null;
-  }
-}
-
-function setActiveVSCodeLabel(label: string): void {
-  let s: Record<string, unknown> = {};
-  try {
-    s = JSON.parse(fs.readFileSync(stateFile(), 'utf8'));
-  } catch {
-    /* fresh */
-  }
-  s.activeVSCode = label;
-  fs.mkdirSync(getDataRoot(), { recursive: true });
-  fs.writeFileSync(stateFile(), JSON.stringify(s, null, 2) + '\n');
-}
-
-// ── oauthAccount metadata helpers ───────────────────────────────────────────
-interface OAuthAccount {
-  emailAddress?: string;
-  [k: string]: unknown;
-}
-
-function stateFileForConfigDir(dir: string): string {
-  if (path.resolve(dir) === path.join(HOME, '.claude')) return SHARED_STATE_FILE;
-  return path.join(dir, '.claude.json');
-}
-
-function readOAuthAccount(jsonFile: string): OAuthAccount | null {
-  try {
-    const cfg = JSON.parse(fs.readFileSync(jsonFile, 'utf8'));
-    return cfg && typeof cfg === 'object' && cfg.oauthAccount ? (cfg.oauthAccount as OAuthAccount) : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Merge ONLY the oauthAccount key into the target JSON; preserve all other
- *  keys; write atomically so the precious ~/.claude.json is never truncated. */
-function writeOAuthAccount(jsonFile: string, oauthAccount: OAuthAccount): void {
-  let cfg: Record<string, unknown> = {};
-  try {
-    cfg = JSON.parse(fs.readFileSync(jsonFile, 'utf8'));
-  } catch {
-    /* file may not exist yet */
-  }
-  cfg.oauthAccount = oauthAccount;
-  fs.mkdirSync(path.dirname(jsonFile), { recursive: true });
-  const tmp = jsonFile + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2) + '\n');
-  fs.renameSync(tmp, jsonFile);
-}
-
-function emailForConfigDir(dir: string): string | null {
-  return readOAuthAccount(stateFileForConfigDir(dir))?.emailAddress ?? null;
-}
-
-// ── one-time, non-destructive migration of a bare ~/.claude account ─────────
-/**
- * If a registered account's configDir is the bare ~/.claude (the shared slot
- * itself), give it its own isolated home so it can be switched/opened like any
- * other account. Copies the CURRENT shared-slot token + oauthAccount into the
- * new location; leaves the shared slot fully intact. Idempotent; safe to call
- * before every switch/open.
- */
-export function ensureAccountsMigrated(): void {
-  const accounts = loadRegistry();
-  for (const acc of accounts) {
-    if (path.resolve(acc.configDir) !== path.join(HOME, '.claude')) continue;
-    const newDir = path.join(getDataRoot(), 'accounts', acc.label);
-    fs.mkdirSync(newDir, { recursive: true });
-    // token: shared slot → this account's own isolated entry
-    copySecret(sharedSlotService(), serviceForConfigDir(newDir));
-    // metadata: ~/.claude.json oauthAccount → <newDir>/.claude.json
-    const oauth = readOAuthAccount(SHARED_STATE_FILE);
-    if (oauth) writeOAuthAccount(path.join(newDir, '.claude.json'), oauth);
-    ensureOnboarded(newDir);
-    acc.configDir = newDir; // registry now points at the isolated home
-    // Persist each account's migration immediately. If a later account in this
-    // loop throws (e.g. a denied Keychain read), the work already done isn't
-    // lost — and re-running won't re-copy an already-migrated account out of a
-    // shared slot that may have changed in the meantime.
-    saveRegistry(accounts);
-    if (!getActiveVSCodeLabel()) setActiveVSCodeLabel(acc.label); // shared slot currently holds it
-  }
-}
-
-// ── helpers ──────────────────────────────────────────────────────────────────
-function shQuote(s: string): string {
-  return `'` + s.replace(/'/g, `'\\''`) + `'`;
-}
-
-// ── [Open as new CLI] ────────────────────────────────────────────────────────
-/**
- * Open a new Terminal window with CLAUDE_CONFIG_DIR pinned to this account, so
- * any `claude` run in it uses that account — independent of the shared slot.
- * Writes a .command launcher and opens it (this does NOT touch the keychain or
- * the shared slot at all).
- */
-export function openCli(label: string): void {
-  ensureAccountsMigrated();
-  const acc = loadRegistry().find((a) => a.label === label);
-  if (!acc) throw new Error(`unknown account "${label}"`);
-  const dir = acc.configDir;
-  const email = emailForConfigDir(dir) ?? label;
-  if (process.platform === 'win32') return openCliWindows(label, dir, email);
-  // email/label get embedded in a shell script that is later executed, so treat
-  // them as untrusted: assign via single-quoted (shQuote'd) vars and print them
-  // with `print -r` (no escape/prompt expansion). Parameter expansion isn't
-  // re-evaluated, so a value containing $(…), backticks, or %-codes can't run.
-  const script =
-    [
-      '#!/bin/zsh',
-      `export CLAUDE_CONFIG_DIR=${shQuote(dir)}`,
-      // Mirror the app's spawn hygiene so an exported API key can't shadow OAuth.
-      'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL CLAUDECODE 2>/dev/null',
-      `cqm_email=${shQuote(email)}`,
-      `cqm_label=${shQuote(label)}`,
-      'clear',
-      'print -P -- "  %F{cyan}Claude CLI%f"',
-      'print -r -- "  account: ${cqm_email}  [${cqm_label}]"',
-      'print -r -- "  CLAUDE_CONFIG_DIR is set for this window. Start Claude with:  claude"',
-      'print --',
-      'exec "${SHELL:-/bin/zsh}" -il',
-      '',
-    ].join('\n');
-  // Unique per invocation: `open` returns before Terminal finishes reading the
-  // file, so a fixed name could be truncated by a second click mid-read.
-  const file = path.join(os.tmpdir(), `claude-cli-${label}-${Date.now()}.command`);
-  fs.writeFileSync(file, script, { mode: 0o755 });
-  const r = spawnSync('/usr/bin/open', [file]);
-  if (r.status !== 0) throw new Error('failed to open a Terminal window');
-}
-
-/**
- * Windows equivalent of openCli: open a NEW console window with
- * CLAUDE_CONFIG_DIR pinned to this account. The launcher script is STATIC — the
- * account dir + display strings travel as environment variables (set on the
- * child below), and the banner prints them via delayed expansion (`!VAR!`),
- * which never re-parses `& | %` etc. So an email/label containing shell
- * metacharacters can't inject commands (the macOS path relies on shQuote for
- * the same guarantee).
- */
-function openCliWindows(label: string, dir: string, email: string): void {
-  const script =
-    [
-      '@echo off',
-      'setlocal EnableDelayedExpansion',
-      'echo.',
-      'echo   Claude CLI',
-      'echo   account: !CQM_EMAIL!  [!CQM_LABEL!]',
-      'echo   CLAUDE_CONFIG_DIR is set for this window. Start Claude with:  claude',
-      'echo.',
-      'endlocal',
-      '',
-    ].join('\r\n');
-  const safe = label.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const file = path.join(os.tmpdir(), `claude-cli-${safe}-${Date.now()}.cmd`);
-  fs.writeFileSync(file, script);
-
-  const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
-  env.CLAUDE_CONFIG_DIR = dir;
-  env.CQM_EMAIL = email;
-  env.CQM_LABEL = label;
-  // Mirror the app's spawn hygiene so an exported API key can't shadow OAuth.
-  delete env.ANTHROPIC_API_KEY;
-  delete env.ANTHROPIC_AUTH_TOKEN;
-  delete env.ANTHROPIC_BASE_URL;
-  delete env.CLAUDECODE;
-
-  // `start "" cmd /k "<script>"` opens a new window, runs the banner, and leaves
-  // the shell interactive with the env above. windowsVerbatimArguments so cmd
-  // sees the line exactly (start's empty title arg + the quoted script path).
-  const r = spawnSync('cmd.exe', ['/c', `start "" cmd /k "${file}"`], {
-    env,
-    windowsVerbatimArguments: true,
-  });
-  if (r.status !== 0) throw new Error('failed to open a console window');
-}
-
-// ── [Switch VS Code] ──────────────────────────────────────────────────────────
 /**
  * Render this account into the shared slot (keychain `Claude Code-credentials`
  * + ~/.claude.json oauthAccount) that the VS Code extension reads, then ask

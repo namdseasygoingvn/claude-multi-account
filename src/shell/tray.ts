@@ -7,8 +7,6 @@ import type { AppContext } from '../context.js';
 
 /** Cross-module actions the tray menu triggers, injected by main.ts. */
 export interface TrayDeps {
-  /** "Check usage now" + the auto-refresh timer. */
-  checkUsage(): void;
   /** "Add account…" */
   addAccount(): void;
   /** "Repair / update Claude Code…" */
@@ -23,9 +21,6 @@ export interface TrayController {
 }
 
 export function createTray(ctx: AppContext, deps: TrayDeps): TrayController {
-  let autoTimer: NodeJS.Timeout | null = null;
-  let autoMinutes = 0; // 0 = off (tray-menu driven; the popover has its own toggle)
-
   function trayImage(): Electron.NativeImage {
     if (process.platform === 'darwin') {
       const img = nativeImage.createFromPath(path.join(REPO_ROOT, 'assets', 'trayTemplate.png'));
@@ -41,17 +36,7 @@ export function createTray(ctx: AppContext, deps: TrayDeps): TrayController {
     return nativeImage.createFromPath(file);
   }
 
-  function setAutoRefresh(minutes: number): void {
-    autoMinutes = minutes;
-    if (autoTimer) {
-      clearInterval(autoTimer);
-      autoTimer = null;
-    }
-    if (minutes > 0) autoTimer = setInterval(() => deps.checkUsage(), minutes * 60_000);
-  }
-
   function buildContextMenu(): Electron.Menu {
-    const intervals = [0, 5, 15, 30, 60];
     const update = getAvailableUpdate();
     const updateItem: Electron.MenuItemConstructorOptions = isDownloading()
       ? { label: 'Downloading update…', enabled: false }
@@ -63,17 +48,6 @@ export function createTray(ctx: AppContext, deps: TrayDeps): TrayController {
           };
     return Menu.buildFromTemplate([
       { label: `Claude Quota Monitor v${app.getVersion()}`, enabled: false },
-      { type: 'separator' },
-      { label: 'Check usage now', click: () => deps.checkUsage() },
-      {
-        label: 'Auto-refresh',
-        submenu: intervals.map((m) => ({
-          label: m === 0 ? 'Off' : `Every ${m} min`,
-          type: 'radio' as const,
-          checked: autoMinutes === m,
-          click: () => setAutoRefresh(m),
-        })),
-      },
       { type: 'separator' },
       { label: 'Add account…', click: () => deps.addAccount() },
       {

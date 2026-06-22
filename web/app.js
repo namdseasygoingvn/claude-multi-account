@@ -3,9 +3,10 @@
 import { $, setStatus, refreshIcons } from './dom.js';
 import { state } from './state.js';
 import { renderCards } from './cards.js';
-import { loadAccounts, runCheck, deleteAccount, openCliFor, switchVSCodeFor } from './actions.js';
+import { loadAccounts, runCheck, deleteAccount, openCliFor, switchVSCodeFor, reorderAccounts } from './actions.js';
 import { addAccount, openLogin, showModal } from './modal.js';
 import { connectEvents } from './events.js';
+import { initReorder } from './reorder.js';
 
 // Behavior half of the account-action registry (appearance is in
 // account-actions.js). Keys are the action ids; each gets the clicked label.
@@ -62,6 +63,9 @@ $('#auto-mins').addEventListener('input', (e) => {
 $('#auto-mins').addEventListener('change', () => {
   if ($('#auto-toggle').checked) applyAuto();
 });
+
+// Drag the grip handle on a card to reorder accounts; the new order is saved.
+initReorder(reorderAccounts);
 
 refreshIcons();
 connectEvents();

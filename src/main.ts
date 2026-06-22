@@ -43,7 +43,6 @@ const runUsageCheck = (labels?: string[]) => runUsageCheckImpl(ctx, labels);
 const windowCtl = createWindowController(ctx);
 const repair = createRepair(ctx, { showWindow: () => windowCtl.show() });
 const trayCtl = createTray(ctx, {
-  checkUsage: () => void runUsageCheck(),
   addAccount: () => void repair.addAccountFlow(),
   repairClaude: () => void repair.repairClaudeMenu(),
   toggleWindow: () => windowCtl.toggle(),

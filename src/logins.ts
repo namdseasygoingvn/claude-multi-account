@@ -1,6 +1,7 @@
 import { spawnClaude } from './session.js';
-import { cleanCapture, TRUST_PROMPT_RE, THEME_PROMPT_RE, CONTINUE_PROMPT_RE } from './parse.js';
+import { cleanCapture } from './parse.js';
 import { ensureOnboarded, probeLogin } from './registry.js';
+import { AUTO_KEY_DELAY_MS, matchAutoRule } from './login-autorules.js';
 
 const SNAPSHOT_TAIL = 6_000;
 const URL_RE = /https?:\/\/[^\s"'<>)\]]+/g;
@@ -13,8 +14,6 @@ const SUCCESS_POLL_MS = 1_500;
  * This is the hard ceiling on that wind-down.
  */
 const SUCCESS_MAX_LINGER_MS = 15_000;
-/** Delay between detecting a known screen and answering it, so the menu finishes painting. */
-const AUTO_KEY_DELAY_MS = 400;
 
 export interface LoginEvents {
   onSnapshot: (label: string, snapshot: string) => void;
@@ -23,37 +22,6 @@ export interface LoginEvents {
   onSuccess: (label: string, email: string | null) => void;
   onExit: (label: string, exitCode: number) => void;
 }
-
-interface AutoRule {
-  key: string;
-  re: RegExp;
-  status: string;
-  /** Keystrokes to send when this screen appears (default: Enter). */
-  send?: string;
-  /** Screens that can appear more than once (e.g. "Press Enter to continue"). */
-  repeatable?: boolean;
-}
-
-/**
- * Auto-drive the human-free part of onboarding by pressing Enter on each
- * known screen: default theme, "Claude account with subscription" (the
- * pre-selected login method), folder trust, and any "press Enter to
- * continue" interstitial. The actual browser sign-in stays human.
- * Patterns are whitespace-insensitive — TUI repaints can drop spaces.
- */
-const AUTO_RULES: AutoRule[] = [
-  { key: 'theme', re: THEME_PROMPT_RE, status: 'picking default theme' },
-  { key: 'method', re: /Select\s*login\s*method/i, status: 'choosing Claude subscription sign-in' },
-  { key: 'trust', re: TRUST_PROMPT_RE, status: 'accepting folder trust' },
-  { key: 'continue', re: CONTINUE_PROMPT_RE, status: 'continuing', repeatable: true },
-  // We pre-seed hasCompletedOnboarding so claude trusts a persisted token and
-  // lands in the REPL after sign-in. The side effect: a fresh, token-less
-  // account also skips the first-run login wizard and drops into the REPL
-  // showing "Not logged in · Run /login" — no OAuth picker. Kick sign-in off
-  // ourselves by running /login, which brings up "Select login method" (handled
-  // by the rule above). Without this, onboarding stalls here forever.
-  { key: 'login', re: /Run\s*\/login\b/i, status: 'opening sign-in', send: '/login\r' },
-];
 
 interface LoginSession {
   term: ReturnType<typeof spawnClaude>;
@@ -186,20 +154,17 @@ export class LoginManager {
   }
 
   private autoDrive(label: string, sess: LoginSession, clean: string): void {
-    const fresh = clean.slice(sess.autoCursor);
-    for (const rule of AUTO_RULES) {
-      if (!rule.repeatable && sess.firedRules.has(rule.key)) continue;
-      if (!rule.re.test(fresh)) continue;
-      sess.firedRules.add(rule.key);
-      sess.autoCursor = clean.length;
-      if (!sess.succeeded) this.events.onStatus(label, rule.status);
-      sess.keyTimers.push(
-        setTimeout(() => {
-          if (this.sessions.get(label) === sess) sess.term.write(rule.send ?? '\r');
-        }, AUTO_KEY_DELAY_MS),
-      );
-      break; // one keystroke per flush; the next screen is handled on the next flush
-    }
+    // One keystroke per flush; the next screen is handled on the next flush.
+    const rule = matchAutoRule(clean.slice(sess.autoCursor), sess.firedRules);
+    if (!rule) return;
+    sess.firedRules.add(rule.key);
+    sess.autoCursor = clean.length;
+    if (!sess.succeeded) this.events.onStatus(label, rule.status);
+    sess.keyTimers.push(
+      setTimeout(() => {
+        if (this.sessions.get(label) === sess) sess.term.write(rule.send ?? '\r');
+      }, AUTO_KEY_DELAY_MS),
+    );
   }
 
   private finish(label: string): void {

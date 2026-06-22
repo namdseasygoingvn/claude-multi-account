@@ -77,9 +77,8 @@
       "icon": "assets/icon.ico"
     },
     "nsis": {
-      "oneClick": false,
+      "oneClick": true,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
       "artifactName": "ClaudeQuotaMonitor-${version}-${arch}-setup.${ext}"
     }
   }

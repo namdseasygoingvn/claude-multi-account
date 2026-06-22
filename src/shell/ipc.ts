@@ -7,6 +7,7 @@ import {
   loadRegistry,
   probeLogin,
   removeAccount,
+  reorderAccounts,
 } from '../registry.js';
 import { getActiveVSCodeLabel, openCli, switchVSCode } from '../switcher.js';
 import type { AppContext } from '../context.js';
@@ -61,6 +62,12 @@ export function registerIpc(ctx: AppContext, deps: IpcDeps): void {
     removeAccount(payload.label);
     ctx.lastResults.delete(payload.label);
     ctx.updateBadge();
+    return { ok: true };
+  });
+
+  ipcMain.handle('accounts:reorder', (_e, payload: { labels?: string[] } = {}) => {
+    const labels = Array.isArray(payload?.labels) ? payload.labels.filter((l) => typeof l === 'string') : [];
+    reorderAccounts(labels);
     return { ok: true };
   });
 

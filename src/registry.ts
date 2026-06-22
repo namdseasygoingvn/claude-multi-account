@@ -93,6 +93,25 @@ export function removeAccount(label: string): boolean {
   return true;
 }
 
+/**
+ * Persist a new account order. `orderedLabels` lists labels in the desired order
+ * (the renderer's drag-to-reorder result); accounts are rewritten to match it.
+ * Unknown labels are ignored and any registered account missing from the list is
+ * appended in its original relative order, so a concurrent add can't be dropped.
+ */
+export function reorderAccounts(orderedLabels: string[]): AccountConfig[] {
+  const accounts = loadRegistry();
+  const byLabel = new Map(accounts.map((a) => [a.label, a]));
+  const next: AccountConfig[] = [];
+  for (const label of orderedLabels) {
+    const acc = byLabel.get(label);
+    if (acc && !next.includes(acc)) next.push(acc);
+  }
+  for (const acc of accounts) if (!next.includes(acc)) next.push(acc);
+  saveRegistry(next);
+  return next;
+}
+
 /** Empty directory used as cwd for spawned claude REPLs, so no real project gets touched. */
 export function scratchDir(): string {
   const dir = path.join(getDataRoot(), '.scratch');

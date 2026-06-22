@@ -5,6 +5,7 @@ const INVOKE = new Set([
   'accounts:list',
   'accounts:add',
   'accounts:remove',
+  'accounts:reorder',
   'login:start',
   'login:stop',
   'login:code',

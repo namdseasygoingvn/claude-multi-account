@@ -45,6 +45,24 @@ export async function runCheck(labels) {
   }
 }
 
+// Persist a drag-reordered account list. Reorder local state optimistically (so
+// the cards settle into place instantly), then save to disk; on failure, reload
+// the on-disk order so the UI never drifts from the truth.
+export async function reorderAccounts(orderedLabels) {
+  const byLabel = new Map(state.accounts.map((a) => [a.label, a]));
+  const next = orderedLabels.map((l) => byLabel.get(l)).filter(Boolean);
+  for (const a of state.accounts) if (!next.includes(a)) next.push(a); // keep any not listed
+  if (next.length !== state.accounts.length) return; // sanity: don't drop accounts
+  state.accounts = next;
+  renderCards();
+  try {
+    await invoke('accounts:reorder', { labels: state.accounts.map((a) => a.label) });
+  } catch (err) {
+    setStatus(`reorder failed: ${err.message}`);
+    await loadAccounts(); // re-sync with on-disk order
+  }
+}
+
 export async function deleteAccount(label) {
   const acc = state.accounts.find((a) => a.label === label);
   const name = (acc && acc.email) || label;

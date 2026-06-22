@@ -29,7 +29,11 @@ plain Node: tests, the spike script) and a `src/shell/` *layer* (everything that
 touches Electron):
 
 - Core (flat): `registry` `logins` `switcher` `usage` `usage-api` `parse`
-  `updater` `claude-health` `keychain` `session` `paths` `types`.
+  `claude-health` `keychain` `session` `paths` `types`.
+- `updater` is a small cluster (kept each file ≤200 lines): `updater.ts` is the
+  platform-dispatch facade; `updater-shared.ts` holds the cross-platform update
+  state + helpers; `updater-windows.ts` / `updater-mac.ts` own each OS's install
+  flow; `updater-mac-relaunch.ts` is the detached bundle-swap shell script.
 - `bootstrap.ts` — env/PATH fixups + `claude` binary resolution, run first.
 - `context.ts` — `AppContext`: the shared mutable state (`win`, `tray`, `logins`,
   `lastResults`, `checking`) plus the two notify helpers (`send`, `updateBadge`).
@@ -46,7 +50,8 @@ touches Electron):
 (no cycles): `app.js` → `events` → `modal` → `actions` → `cards` →
 `account-actions` → `window-fit` → leaves (`api`, `state`, `dom`). `app.js` is the
 entry; `state.js` holds renderer state; `api.js` wraps the `window.api` IPC bridge
-(exposed by `preload.mts`).
+(exposed by `preload.mts`). `reorder.js` (drag-to-reorder the account cards) is a
+near-leaf — it imports only `dom` and takes a persist callback from `app.js`.
 
 **Per-account buttons are a registry.** `web/account-actions.js` declares each
 button's *appearance* (id, icon, label, disabled); `ACTION_HANDLERS` in `app.js`
@@ -72,9 +77,12 @@ callers. Where the core splits:
 - `switcher` — Windows gets its own new-console launcher (`openCliWindows`) and
   `tasklist` VS Code check; the scripted VS Code reload (`osascript`) is macOS-only
   (elsewhere the user is told to reload by hand).
-- `updater` — the one-click install picks + runs THIS platform's release asset:
-  macOS mounts the `.dmg` and swaps the `.app` bundle in place; Windows runs the
-  per-user NSIS `.exe` and quits so it can replace files (its finish step relaunches).
+- `updater` (the cluster above) — `checkForUpdates`/`downloadAndInstall` dispatch
+  to THIS platform's flow: macOS mounts the `.dmg` and swaps the `.app` bundle in
+  place; Windows uses electron-updater to silently download the **one-click**
+  per-user NSIS `.exe` and `quitAndInstall` (silent, no UAC, relaunches). The
+  one-click installer is load-bearing — an assisted NSIS installer's silent
+  install no-ops and loops "update available" forever.
 - `shell/tray` + `context` — colored (non-template) tray icon off macOS; the
   worst-% readout is the tray *title* on macOS, the *tooltip* elsewhere.
 - `shell/window` — the popover drops below a top tray (macOS menu bar) or rises
@@ -93,7 +101,11 @@ Line count is a smell, not a law. The actual rule: **a file (or function) earns
 its place by having one reason to change.** If you can only describe a file with
 "and", it's more than one module.
 
-- **File length:** ~200 lines is a prompt to look; ~300 is a prompt to split.
+- **File length:** **hard cap — no file exceeds 200 lines.** ~150 is a prompt to
+  look for the seam; at 200 you split before adding more. This applies to every
+  `src/` and `web/` file (and the build/CI scripts). KISS: no god module — if a
+  file does two jobs, it's two files. The updater was the worked example (see the
+  `updater*` split below).
 - **Function length:** past ~40 lines, extract a helper.
 - **`// ── … ──` banners** mark concerns — when a file grows several, those are
   the cut lines. (That's exactly how the old `main.ts` was decomposed.)

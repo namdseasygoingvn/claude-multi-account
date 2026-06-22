@@ -64,6 +64,8 @@ function cardHtml(acc) {
     body += `<div class="noinfo">no check yet</div>`;
   }
 
+  // Grip handle is the only drag surface (see reorder.js); hidden until row hover.
+  const handle = `<span class="drag-handle" draggable="true" aria-label="Drag to reorder"><i data-lucide="grip-vertical"></i></span>`;
   const dot = `<span class="dot ${acc.loggedIn ? 'on' : 'off'}"></span>`;
   const email = acc.loggedIn
     ? `<span class="email">${esc(acc.email || 'signed in')}</span>`
@@ -72,8 +74,8 @@ function cardHtml(acc) {
   const actions = `<span class="acct-actions">${ACCOUNT_ACTIONS.map((a) => actionBtnHtml(a, acc)).join('')}</span>`;
 
   return `
-    <div class="acct${state.activeLogin === acc.label && !state.loginDone ? ' active' : ''}">
-      <div class="acct-head">${dot}${email}${actions}</div>
+    <div class="acct${state.activeLogin === acc.label && !state.loginDone ? ' active' : ''}" data-label="${esc(acc.label)}">
+      <div class="acct-head">${handle}${dot}${email}${actions}</div>
       ${body}
     </div>`;
 }
