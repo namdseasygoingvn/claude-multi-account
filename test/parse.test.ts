@@ -127,6 +127,33 @@ test('parses the spaceless TUI rendering (regression: weekly section was dropped
   assert.ok(parsed.sections.every((s) => /^Current /.test(s.heading)));
 });
 
+test('parses the 2.1.185 inline layout (regression: pct/reset collapsed onto the heading line)', () => {
+  // claude 2.1.185 redesigned the panel so the percentage and reset render on
+  // the SAME line as the heading, preceded by a progress-ring glyph that
+  // survives ANSI stripping ("Current session ◯ 35%used Resets 12am …"). The
+  // old end-anchored, line-by-line heading match found zero sections here and
+  // the app reported "no usage sections found in the /usage panel".
+  const clean = [
+    'Current session ◯ 35%used Resets 12am (Asia/Saigon)',
+    'Current week (all models) ◯ 34%used Resets Jun 27, 6pm (Asia/Saigon)',
+    'Current week (Sonnet only) ◯ 1%used Resets Jun 27, 6pm (Asia/Saigon)',
+    "What's contributing to your limits usage?",
+    'Scanning local sessions…',
+    '88% of your usage came from subagent-heavy sessions',
+  ].join('\n');
+  const parsed = parseUsage(clean);
+  assert.equal(parsed.sessionPct, 35);
+  assert.equal(parsed.sessionResetAt, '12am (Asia/Saigon)');
+  assert.equal(parsed.weeklyAllPct, 34);
+  assert.equal(parsed.weeklyAllResetAt, 'Jun 27, 6pm (Asia/Saigon)');
+  assert.equal(parsed.weeklyModelLabel, 'Sonnet only');
+  assert.equal(parsed.weeklyModelPct, 1);
+  assert.equal(parsed.confidence, 'high');
+  assert.equal(parsed.sections.length, 3);
+  // the "88% of your usage…" insight line must not leak into the last section
+  assert.ok(parsed.sections.every((s) => /^Current /.test(s.heading)));
+});
+
 test('detects genuine logged-out screens', () => {
   assert.ok(looksLoggedOut('Select login method\n1. Claude account with subscription'));
   assert.ok(looksLoggedOut('Paste code here if prompted:'));

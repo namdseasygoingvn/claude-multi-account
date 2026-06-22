@@ -28,9 +28,18 @@ export function cleanCapture(raw: string): string {
 // cursor-positioning escapes are stripped ("Currentweek(allmodels)",
 // "ResetsJun20at4:59pm") — so every pattern tolerates missing whitespace and
 // headings are canonicalized (space-stripped) before lookup.
-const HEADING_RE = /^Current\s*(session|week|month)\b\s*(?:\(\s*([^)]*?)\s*\))?\s*$/i;
+//
+// HEADING_RE is deliberately NOT end-anchored and is matched globally across the
+// whole capture rather than line-by-line. Older claude builds rendered each
+// section as three lines (heading, "18%used", "Resets …"); 2.1.185 collapses the
+// percentage (and a leading progress-ring glyph that survives ANSI stripping)
+// onto the heading line — "Current session 35%used Resets 12am". Anchoring the
+// heading to end-of-line dropped every section there. Instead we find each
+// heading wherever it appears and scan the text up to the next heading for the
+// percentage and reset, so both layouts parse identically.
+const HEADING_RE = /Current\s*(session|week|month)\b(?:\s*\(([^)]*)\))?/gi;
 const PCT_RE = /(\d{1,3})\s*%\s*used/i;
-const RESET_RE = /Resets\s*(.+?)\s*$/i;
+const RESET_RE = /Resets\s*([^\n]+)/i;
 
 /** Multi-word weekly qualifiers, keyed by their space-stripped lowercased form. */
 const QUAL_PRETTY: Record<string, string> = {
@@ -46,15 +55,13 @@ interface Heading {
   display: string; // e.g. "Current week (all models)"
 }
 
-/** Parse a panel heading line, tolerating spaceless TUI rendering; null if not a heading. */
-function parseHeading(line: string): Heading | null {
-  const m = line.match(HEADING_RE);
-  if (!m) return null;
-  const period = m[1].toLowerCase();
-  const rawQual = (m[2] ?? '').trim();
+/** Build a Heading from a regex match of HEADING_RE (capture groups: period, qualifier). */
+function toHeading(period: string, rawQualifier: string): Heading {
+  const p = period.toLowerCase();
+  const rawQual = rawQualifier.trim();
   const qualKey = rawQual.replace(/\s+/g, '').toLowerCase();
   const pretty = qualKey ? (QUAL_PRETTY[qualKey] ?? rawQual.replace(/\s+/g, ' ')) : '';
-  return { period, qualKey, display: `Current ${period}${pretty ? ` (${pretty})` : ''}` };
+  return { period: p, qualKey, display: `Current ${p}${pretty ? ` (${pretty})` : ''}` };
 }
 
 /** Canonical, whitespace-independent key for a heading. */
@@ -75,24 +82,22 @@ function normalizeReset(s: string): string {
  * LAST occurrence wins — that is the fully rendered frame.
  */
 export function parseUsage(clean: string): ParsedUsage {
-  const lines = clean.split('\n');
   const byKey = new Map<string, UsageSection>(); // canonical key -> section; insertion order = render order
-  for (let i = 0; i < lines.length; i++) {
-    const h = parseHeading(lines[i]);
-    if (!h) continue;
-    let pct: number | null = null;
-    let resetsAt: string | null = null;
-    for (let j = i + 1; j <= i + 5 && j < lines.length; j++) {
-      if (parseHeading(lines[j])) break; // ran into the next section
-      if (pct === null) {
-        const pm = lines[j].match(PCT_RE);
-        if (pm) pct = Math.min(100, parseInt(pm[1], 10));
-      }
-      if (resetsAt === null) {
-        const rm = lines[j].match(RESET_RE);
-        if (rm) resetsAt = normalizeReset(rm[1]);
-      }
-    }
+  // Locate every heading first; each section's data is the text between its
+  // heading and the next one — robust to whether pct/reset sit on the heading
+  // line (2.1.185) or on the lines below it (older builds).
+  const heads: Array<{ h: Heading; from: number; until: number }> = [];
+  HEADING_RE.lastIndex = 0;
+  for (let m = HEADING_RE.exec(clean); m; m = HEADING_RE.exec(clean)) {
+    heads.push({ h: toHeading(m[1], m[2] ?? ''), from: HEADING_RE.lastIndex, until: clean.length });
+    if (heads.length > 1) heads[heads.length - 2].until = m.index; // close the previous segment here
+  }
+  for (const { h, from, until } of heads) {
+    const segment = clean.slice(from, until);
+    const pm = segment.match(PCT_RE);
+    const rm = segment.match(RESET_RE);
+    const pct = pm ? Math.min(100, parseInt(pm[1], 10)) : null;
+    const resetsAt = rm ? normalizeReset(rm[1]) : null;
     if (pct === null && resetsAt === null) continue; // heading echoed without data (e.g. autocomplete)
     const key = headingKey(h);
     byKey.delete(key); // re-insert so a later, more complete frame wins and refreshes order
