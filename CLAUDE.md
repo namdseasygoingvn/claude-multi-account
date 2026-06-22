@@ -5,7 +5,7 @@ that watches Claude Code usage quota across multiple accounts. It drives real
 `claude` REPLs over PTYs, runs `/usage` for each account, and can sign accounts
 in, open per-account CLIs, and switch the VS Code extension's account.
 
-## Commands
+## Commands 
 
 ```bash
 npm run build     # tsc → dist/  (the only build step; no bundler)
