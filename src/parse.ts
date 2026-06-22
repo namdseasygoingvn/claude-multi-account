@@ -159,3 +159,15 @@ export function looksLoggedOut(clean: string): boolean {
     clean,
   );
 }
+
+/**
+ * True when claude's /usage panel shows its rate-limit error instead of the
+ * usage table: "Error: Usage endpoint is rate limited. Please try again in a
+ * moment." This is a per-account throttle on the usage endpoint — most often
+ * tripped when the SAME account has another live claude session (interactive
+ * CLI, IDE extension, agent run) hitting it, or by checking it too frequently.
+ * Whitespace-insensitive: TUI repaints drop spaces once escapes are stripped.
+ */
+export function looksRateLimited(clean: string): boolean {
+  return /(usage\s*endpoint\s*is\s*rate\s*limited|rate\s*limited\.?\s*please\s*try\s*again)/i.test(clean);
+}

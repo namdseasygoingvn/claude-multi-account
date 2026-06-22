@@ -4,6 +4,7 @@ import {
   cleanCapture,
   parseUsage,
   looksLoggedOut,
+  looksRateLimited,
   TRUST_PROMPT_RE,
   THEME_PROMPT_RE,
   CONTINUE_PROMPT_RE,
@@ -118,11 +119,15 @@ export async function runUsageOnce(configDir: string | null, ev: UsageEvents = {
       const elapsed = Date.now() - start;
       const idle = Date.now() - lastChange;
       if (elapsed >= PANEL_CAP_MS) return;
+      const clean = cleanCapture(buf);
+      // The rate-limit error replaces the panel and never sprouts sections, so
+      // stop waiting the instant it appears rather than burning the no-data idle.
+      if (looksRateLimited(clean)) return;
       if (elapsed < PANEL_MIN_MS) continue;
       // Content-aware completion: the more complete the panel, the shorter
       // the settle. Sections can paint across several frames (session first,
       // weekly later), so a partial panel gets extra time to fill in.
-      const parsed = parseUsage(cleanCapture(buf));
+      const parsed = parseUsage(clean);
       if (parsed.confidence === 'high' && idle >= PANEL_IDLE_MS) return;
       if (parsed.sections.length > 0 && idle >= PANEL_PARTIAL_IDLE_MS) return;
       if (idle >= PANEL_NO_DATA_IDLE_MS) return;
@@ -141,12 +146,18 @@ export async function runUsageOnce(configDir: string | null, ev: UsageEvents = {
     const raw = cleanCapture(buf);
     const parsed = parseUsage(raw);
     const ok = parsed.sections.length > 0;
+    const rateLimited = !ok && looksRateLimited(raw);
     return {
       ok,
       loggedIn: true,
+      rateLimited,
       parsed,
       raw: raw.slice(-RAW_TAIL_CHARS),
-      error: ok ? null : 'no usage sections found in the /usage panel — see raw output',
+      error: ok
+        ? null
+        : rateLimited
+          ? 'usage endpoint is rate limited — try again shortly. An active claude session on this account (CLI, IDE, or agent) commonly causes this.'
+          : 'no usage sections found in the /usage panel — see raw output',
       durationMs: Date.now() - started,
     };
   } catch (err) {

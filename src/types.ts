@@ -39,6 +39,8 @@ export interface UsageRun {
   ok: boolean;
   /** false when the REPL showed a login/onboarding screen; null when unknown (e.g. timeout). */
   loggedIn: boolean | null;
+  /** true when the /usage panel returned its rate-limit error instead of data. */
+  rateLimited?: boolean;
   parsed: ParsedUsage | null;
   /** ANSI-stripped capture tail — the raw fallback shown in the UI when parsing fails. */
   raw: string;

@@ -7,6 +7,7 @@ import {
   cleanCapture,
   parseUsage,
   looksLoggedOut,
+  looksRateLimited,
   TRUST_PROMPT_RE,
   THEME_PROMPT_RE,
   CONTINUE_PROMPT_RE,
@@ -132,6 +133,15 @@ test('detects genuine logged-out screens', () => {
   // repaints can drop spaces entirely once cursor-positioning is stripped
   assert.ok(looksLoggedOut('Selectloginmethod'));
   assert.ok(!looksLoggedOut(fixture('usage-panel-sonnet.txt')));
+});
+
+test('detects the /usage rate-limit error panel', () => {
+  assert.ok(looksRateLimited('Error: Usage endpoint is rate limited. Please try again in a moment.'));
+  // whitespace-insensitive: TUI repaints can drop the spaces between words
+  assert.ok(looksRateLimited('UsageendpointisratelimitedPleasetryagaininamoment'));
+  // a normal usage panel (or a logged-out screen) must not trip it
+  assert.ok(!looksRateLimited(fixture('usage-panel-sonnet.txt')));
+  assert.ok(!looksRateLimited('Current session\n18% used\nResets 1am (UTC)'));
 });
 
 test('the theme picker is NOT treated as logged out', () => {

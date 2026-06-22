@@ -25,7 +25,7 @@ import {
 } from './updater.js';
 import { probeClaudeHealth, repairClaude, type ClaudeHealth } from './claude-health.js';
 import { openCli, switchVSCode, getActiveVSCodeLabel } from './switcher.js';
-import type { AccountStatus, UsageResult } from './types.js';
+import type { AccountConfig, AccountStatus, UsageResult } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -99,7 +99,35 @@ function statusOf(label: string): AccountStatus | null {
   return { ...acc, ...probeLogin(acc), loginActive: logins.isActive(acc.label) };
 }
 
-/** Fan out /usage over the given labels (or all). Mirrors POST /api/usage/check. */
+/**
+ * Cap on concurrent /usage checks. Each check spawns a full `claude` REPL and
+ * hits the per-account usage endpoint, so a wide parallel fan-out (every account
+ * at once, on launch) both spikes CPU and helps trip the endpoint's rate limit.
+ * A small pool smooths the burst; the monitor isn't latency-critical.
+ */
+const USAGE_CHECK_CONCURRENCY = 2;
+
+/** Map over items with a bounded worker pool, preserving input order in the output. */
+async function mapPooled<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    for (let i = next++; i < items.length; i = next++) out[i] = await fn(items[i]);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
+/**
+ * Fan out /usage over the given labels (or all). The same Anthropic account can
+ * be registered under multiple labels/config dirs (e.g. ~/.claude plus an
+ * accounts/<x> copy of the same login); they share ONE per-account usage
+ * endpoint, so checking each separately doubles the load and helps trip its rate
+ * limit. Group by signed-in email, check one representative per account through
+ * a bounded pool, then fan the single result out to every label that shares it.
+ * Accounts with no detectable email (logged out) can't be grouped, so each is
+ * its own group and still gets attempted (to report "not logged in").
+ */
 async function runUsageCheck(labels?: string[]): Promise<UsageResult[]> {
   const all = loadRegistry();
   const requested = labels && labels.length > 0 ? all.filter((a) => labels.includes(a.label)) : all;
@@ -108,19 +136,34 @@ async function runUsageCheck(labels?: string[]): Promise<UsageResult[]> {
   const labelsRun = targets.map((t) => t.label);
   for (const l of labelsRun) checking.add(l);
   send('check-start', { labels: labelsRun });
+
+  const groups = new Map<string, AccountConfig[]>();
+  for (const acc of targets) {
+    const email = probeLogin(acc).email;
+    const key = email ?? `nogroup:${acc.label}`; // logged-out accounts never merge
+    const group = groups.get(key);
+    if (group) group.push(acc);
+    else groups.set(key, [acc]);
+  }
+
   try {
-    return await Promise.all(
-      targets.map((acc) =>
-        checkUsage(acc, {
-          onPhase: (phase) => send('usage-status', { label: acc.label, phase }),
-        }).then((result) => {
-          lastResults.set(result.label, result);
-          send('usage-result', { result });
-          updateBadge();
-          return result;
-        }),
-      ),
-    );
+    const perGroup = await mapPooled([...groups.values()], USAGE_CHECK_CONCURRENCY, async (group) => {
+      const run = await checkUsage(group[0], {
+        // mirror progress to every label sharing this account so all cards animate
+        onPhase: (phase) => {
+          for (const acc of group) send('usage-status', { label: acc.label, phase });
+        },
+      });
+      // One real check, applied under each label that resolves to this account.
+      const results = group.map((acc) => ({ ...run, label: acc.label }));
+      for (const result of results) {
+        lastResults.set(result.label, result);
+        send('usage-result', { result });
+      }
+      updateBadge();
+      return results;
+    });
+    return perGroup.flat();
   } finally {
     for (const l of labelsRun) checking.delete(l);
     send('check-done', { labels: labelsRun });
