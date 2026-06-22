@@ -1,6 +1,6 @@
 import { getAccount, loadRegistry, probeLogin } from './registry.js';
 import { checkUsage } from './usage.js';
-import { fetchActiveAccountUsage } from './usage-api.js';
+import { fetchActiveAccountUsage, fetchUsageForConfigDir } from './usage-api.js';
 import { getActiveVSCodeLabel, isVSCodeRunning } from './switcher.js';
 import type { AccountConfig, ParsedUsage, UsageResult } from './types.js';
 import type { AppContext } from './context.js';
@@ -89,6 +89,47 @@ async function heldGroupResults(ctx: AppContext, group: AccountConfig[]): Promis
 }
 
 /**
+ * Usage for one non-held account group. Tries the account's usage endpoint
+ * directly first (fast JSON, no PTY) — that alone fixes the intermittent "no
+ * usage sections" the REPL scrape hits for an account active elsewhere, whose
+ * panel sits on "Loading usage data…" until the settle logic gives up. Falls
+ * back to the real /usage scrape when the direct read is unavailable (logged
+ * out, expired/missing token, network) — the scrape also refreshes the token,
+ * so the next cycle's direct read succeeds.
+ */
+async function readLiveGroup(ctx: AppContext, group: AccountConfig[]): Promise<UsageResult[]> {
+  const status = (phase: string): void => {
+    for (const acc of group) ctx.send('usage-status', { label: acc.label, phase });
+  };
+  status('reading usage');
+  let direct: ParsedUsage | null = null;
+  try {
+    direct = await fetchUsageForConfigDir(group[0].configDir);
+  } catch {
+    direct = null;
+  }
+  if (direct && direct.sections.length > 0) {
+    const parsed = direct;
+    const now = new Date().toISOString();
+    return group.map((acc) => ({
+      label: acc.label,
+      checkedAt: now,
+      ok: true,
+      loggedIn: true,
+      rateLimited: false,
+      parsed,
+      raw: '',
+      error: null,
+      durationMs: 0,
+    }));
+  }
+  // mirror progress to every label sharing this account so all cards animate
+  const run = await checkUsage(group[0], { onPhase: status });
+  // One real check, applied under each label that resolves to this account.
+  return group.map((acc) => ({ ...run, label: acc.label }));
+}
+
+/**
  * Fan out /usage over the given labels (or all). The same Anthropic account can
  * be registered under multiple labels/config dirs (e.g. ~/.claude plus an
  * accounts/<x> copy of the same login); they share ONE per-account usage
@@ -136,14 +177,7 @@ export async function runUsageCheck(ctx: AppContext, labels?: string[]): Promise
     }
 
     const livePromise = mapPooled(liveGroups, USAGE_CHECK_CONCURRENCY, async (group) => {
-      const run = await checkUsage(group[0], {
-        // mirror progress to every label sharing this account so all cards animate
-        onPhase: (phase) => {
-          for (const acc of group) ctx.send('usage-status', { label: acc.label, phase });
-        },
-      });
-      // One real check, applied under each label that resolves to this account.
-      const results = group.map((acc) => ({ ...run, label: acc.label }));
+      const results = await readLiveGroup(ctx, group);
       apply(results);
       return results;
     });
