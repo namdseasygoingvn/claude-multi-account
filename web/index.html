@@ -87,6 +87,7 @@
     .acct-actions { display: flex; gap: 1px; flex: 0 0 auto; }
 
     .ibtn {
+      position: relative; /* anchor for the hover tooltip */
       display: inline-flex; align-items: center; justify-content: center;
       width: 20px; height: 20px; padding: 0;
       border: none; border-radius: 5px; background: transparent;
@@ -99,6 +100,29 @@
     .ibtn:disabled { opacity: 0.35; }
     .ibtn.vs-on { color: var(--accent); }
     .ibtn.vs-on:hover { color: var(--accent); background: var(--hover); }
+
+    /* Instant hover tooltip. The OS-native `title` tooltip doesn't render on
+       this frameless vibrancy window, so the icon buttons looked unlabeled.
+       Text comes from aria-label; the bubble flies out to the LEFT of the icon
+       so it never clips against the popover's right edge. */
+    .ibtn[aria-label]:hover { z-index: 5; }
+    .ibtn[aria-label]:hover:not(:disabled)::after {
+      content: attr(aria-label);
+      position: absolute;
+      right: calc(100% + 5px);
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 20;
+      padding: 3px 7px;
+      border-radius: 5px;
+      background: rgba(28, 28, 30, 0.96);
+      color: #fff;
+      font-size: 11px;
+      line-height: 1.25;
+      white-space: nowrap;
+      pointer-events: none;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    }
 
     /* Usage metrics (name + reset left, bold value right, thin bar) */
     .metrics { padding: 0 12px 3px; }

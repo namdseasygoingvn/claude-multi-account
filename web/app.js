@@ -101,21 +101,24 @@ function cardHtml(acc) {
 
   const vsActive = state.activeVSCode === acc.label;
   // Borderless trailing actions: check, open CLI as this account, switch VS Code, sign in, delete.
+  // aria-label labels the icon-only button AND is the text for the CSS hover
+  // tooltip (.ibtn[aria-label] in index.html) — the native `title` tooltip
+  // doesn't render on this frameless vibrancy window.
   const actions = `
     <span class="acct-actions">
-      <button class="check-one-btn ibtn" data-label="${esc(acc.label)}" title="Check usage for this account" ${state.checking.has(acc.label) ? 'disabled' : ''}>
+      <button class="check-one-btn ibtn" data-label="${esc(acc.label)}" aria-label="Check usage" ${state.checking.has(acc.label) ? 'disabled' : ''}>
         <i data-lucide="refresh-cw"></i>
       </button>
-      <button class="open-cli-btn ibtn" data-label="${esc(acc.label)}" title="Open a new Terminal logged in as this account">
+      <button class="open-cli-btn ibtn" data-label="${esc(acc.label)}" aria-label="Open CLI terminal">
         <i data-lucide="terminal"></i>
       </button>
-      <button class="switch-vscode-btn ibtn${vsActive ? ' vs-on' : ''}" data-label="${esc(acc.label)}" title="${vsActive ? 'Active in VS Code — click to reload' : 'Switch VS Code to this account'}">
+      <button class="switch-vscode-btn ibtn${vsActive ? ' vs-on' : ''}" data-label="${esc(acc.label)}" aria-label="${vsActive ? 'Active in VS Code — reload' : 'Switch VS Code'}">
         <i data-lucide="code"></i>
       </button>
-      <button class="login-btn ibtn" data-label="${esc(acc.label)}" title="Sign in this account">
+      <button class="login-btn ibtn" data-label="${esc(acc.label)}" aria-label="Sign in">
         <i data-lucide="log-in"></i>
       </button>
-      <button class="delete-btn ibtn danger" data-label="${esc(acc.label)}" title="Delete account">
+      <button class="delete-btn ibtn danger" data-label="${esc(acc.label)}" aria-label="Delete account">
         <i data-lucide="trash-2"></i>
       </button>
     </span>`;
