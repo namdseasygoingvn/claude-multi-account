@@ -54,7 +54,11 @@ app.on('second-instance', () => windowCtl.show());
 
 app.whenReady().then(() => {
   if (process.platform === 'darwin') app.dock?.hide(); // menu-bar-only app
-  registerIpc(ctx, { runUsageCheck, tryStartLogin: repair.tryStartLogin });
+  registerIpc(ctx, {
+    runUsageCheck,
+    tryStartLogin: repair.tryStartLogin,
+    resizeWindow: (h) => windowCtl.resize(h),
+  });
   windowCtl.create();
   trayCtl.create();
 

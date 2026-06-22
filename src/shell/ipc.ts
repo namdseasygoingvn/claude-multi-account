@@ -1,4 +1,4 @@
-import { ipcMain, screen, shell } from 'electron';
+import { ipcMain, shell } from 'electron';
 
 import {
   addAccount,
@@ -16,6 +16,8 @@ import type { AccountStatus, UsageResult } from '../types.js';
 export interface IpcDeps {
   runUsageCheck(labels?: string[]): Promise<UsageResult[]>;
   tryStartLogin(label: string, configDir: string): Promise<boolean>;
+  /** Fit the popover to a measured content height (geometry lives in window.ts). */
+  resizeWindow(height: number): void;
 }
 
 /** Register every renderer-callable IPC handler (replaces the old express routes). */
@@ -104,17 +106,10 @@ export function registerIpc(ctx: AppContext, deps: IpcDeps): void {
   });
 
   // The renderer measures its content and asks us to fit the popover to it
-  // (capped at ~5 accounts; taller content scrolls). Keep width fixed; clamp
-  // the height so the window never runs past the bottom of the screen.
+  // (capped at ~5 accounts; taller content scrolls). The window controller owns
+  // the geometry — it caps the height and re-anchors the popover to the tray.
   ipcMain.handle('win:resize', (_e, payload: { height: number }) => {
-    if (!ctx.win) return { ok: false };
-    const [w] = ctx.win.getSize();
-    const desired = Math.round(payload?.height ?? 0);
-    if (!Number.isFinite(desired) || desired < 80) return { ok: false };
-    const { y } = ctx.win.getBounds();
-    const area = screen.getDisplayNearestPoint(ctx.win.getBounds()).workArea;
-    const maxH = Math.max(200, area.y + area.height - y - 8);
-    ctx.win.setSize(w, Math.min(desired, maxH), false);
+    deps.resizeWindow(Math.round(payload?.height ?? 0));
     return { ok: true };
   });
 }
