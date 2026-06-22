@@ -1,0 +1,120 @@
+import { ipcMain, screen, shell } from 'electron';
+
+import {
+  addAccount,
+  getAccount,
+  isValidLabel,
+  loadRegistry,
+  probeLogin,
+  removeAccount,
+} from '../registry.js';
+import { getActiveVSCodeLabel, openCli, switchVSCode } from '../switcher.js';
+import type { AppContext } from '../context.js';
+import type { AccountStatus, UsageResult } from '../types.js';
+
+/** Cross-module actions the IPC layer delegates to, injected by main.ts. */
+export interface IpcDeps {
+  runUsageCheck(labels?: string[]): Promise<UsageResult[]>;
+  tryStartLogin(label: string, configDir: string): Promise<boolean>;
+}
+
+/** Register every renderer-callable IPC handler (replaces the old express routes). */
+export function registerIpc(ctx: AppContext, deps: IpcDeps): void {
+  let uiConnected = false; // flips on the renderer's first IPC call (sanity check)
+
+  const statusOf = (label: string): AccountStatus | null => {
+    const acc = getAccount(label);
+    if (!acc) return null;
+    return { ...acc, ...probeLogin(acc), loginActive: ctx.logins.isActive(acc.label) };
+  };
+
+  ipcMain.handle('accounts:list', () => {
+    if (!uiConnected) {
+      uiConnected = true;
+      console.log('[cqm] UI connected (renderer ↔ main IPC working)');
+    }
+    return {
+      accounts: loadRegistry().map((acc) => ({
+        ...acc,
+        ...probeLogin(acc),
+        loginActive: ctx.logins.isActive(acc.label),
+      })),
+      activeVSCode: getActiveVSCodeLabel(),
+    };
+  });
+
+  ipcMain.handle('accounts:add', async (_e, payload: { label?: string } = {}) => {
+    const raw = typeof payload?.label === 'string' ? payload.label.trim() : '';
+    if (raw && !isValidLabel(raw)) {
+      throw new Error('label must be 1–32 chars: letters, digits, dot, dash, underscore');
+    }
+    const acc = addAccount(raw || undefined);
+    const started = await deps.tryStartLogin(acc.label, acc.configDir);
+    return { account: statusOf(acc.label), blocked: !started };
+  });
+
+  ipcMain.handle('accounts:remove', (_e, payload: { label: string }) => {
+    if (!getAccount(payload.label)) throw new Error(`unknown account "${payload.label}"`);
+    ctx.logins.stop(payload.label);
+    removeAccount(payload.label);
+    ctx.lastResults.delete(payload.label);
+    ctx.updateBadge();
+    return { ok: true };
+  });
+
+  ipcMain.handle('login:start', async (_e, payload: { label: string }) => {
+    const acc = getAccount(payload.label);
+    if (!acc) throw new Error(`unknown account "${payload.label}"`);
+    const alreadyActive = ctx.logins.isActive(acc.label);
+    const started = await deps.tryStartLogin(acc.label, acc.configDir);
+    return { account: statusOf(acc.label), alreadyActive, blocked: !started };
+  });
+
+  ipcMain.handle('login:stop', (_e, payload: { label: string }) => ({
+    stopped: ctx.logins.stop(payload.label),
+  }));
+
+  ipcMain.handle('login:code', (_e, payload: { label: string; code: string }) => {
+    const code = typeof payload?.code === 'string' ? payload.code.trim() : '';
+    if (!code) throw new Error('body must be { code: string }');
+    if (!ctx.logins.write(payload.label, code + '\r')) {
+      throw new Error('no active sign-in session for this account');
+    }
+    return { ok: true };
+  });
+
+  ipcMain.handle('usage:check', async (_e, payload: { labels?: string[] } = {}) => ({
+    results: await deps.runUsageCheck(payload?.labels),
+  }));
+
+  ipcMain.handle('cli:open', (_e, payload: { label: string }) => {
+    if (!getAccount(payload.label)) throw new Error(`unknown account "${payload.label}"`);
+    openCli(payload.label);
+    return { ok: true };
+  });
+
+  ipcMain.handle('vscode:switch', (_e, payload: { label: string }) => {
+    if (!getAccount(payload.label)) throw new Error(`unknown account "${payload.label}"`);
+    return switchVSCode(payload.label);
+  });
+
+  ipcMain.handle('shell:openExternal', (_e, payload: { url: string }) => {
+    if (/^https?:/.test(payload?.url ?? '')) void shell.openExternal(payload.url);
+    return { ok: true };
+  });
+
+  // The renderer measures its content and asks us to fit the popover to it
+  // (capped at ~5 accounts; taller content scrolls). Keep width fixed; clamp
+  // the height so the window never runs past the bottom of the screen.
+  ipcMain.handle('win:resize', (_e, payload: { height: number }) => {
+    if (!ctx.win) return { ok: false };
+    const [w] = ctx.win.getSize();
+    const desired = Math.round(payload?.height ?? 0);
+    if (!Number.isFinite(desired) || desired < 80) return { ok: false };
+    const { y } = ctx.win.getBounds();
+    const area = screen.getDisplayNearestPoint(ctx.win.getBounds()).workArea;
+    const maxH = Math.max(200, area.y + area.height - y - 8);
+    ctx.win.setSize(w, Math.min(desired, maxH), false);
+    return { ok: true };
+  });
+}
