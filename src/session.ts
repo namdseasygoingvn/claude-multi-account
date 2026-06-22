@@ -50,7 +50,14 @@ export function spawnClaude(configDir: string | null, opts: SpawnOptions = {}): 
   }
   env.TERM = 'xterm-256color';
 
-  return pty.spawn(CLAUDE_BIN, [], {
+  // Windows: a `.cmd`/`.ps1` shim (how npm installs `claude`) can't be launched
+  // directly through ConPTY — CreateProcess only runs real executables — so run
+  // it via cmd.exe. A native `claude.exe` is spawned directly, as on Unix.
+  const useCmd = process.platform === 'win32' && !/\.exe$/i.test(CLAUDE_BIN);
+  const file = useCmd ? process.env.ComSpec || 'cmd.exe' : CLAUDE_BIN;
+  const args = useCmd ? ['/c', CLAUDE_BIN] : [];
+
+  return pty.spawn(file, args, {
     name: 'xterm-256color',
     cols: opts.cols ?? 120,
     rows: opts.rows ?? 40,

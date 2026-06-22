@@ -51,7 +51,9 @@ export function createContext(makeLogins: (ctx: AppContext) => LoginManager): Ap
           if (s.pct != null && (worst == null || s.pct > worst)) worst = s.pct;
         }
       }
-      tray.setTitle(worst == null ? '' : ` ${worst}%`);
+      // Title text beside the icon is macOS-only; on Windows/Linux the worst-%
+      // readout lives in the tooltip below instead.
+      if (process.platform === 'darwin') tray.setTitle(worst == null ? '' : ` ${worst}%`);
       const lines = [...ctx.lastResults.values()]
         .map((r) => {
           const top = r.parsed?.sections?.reduce<number | null>(

@@ -24,6 +24,18 @@ function claudeBin(): string {
 }
 
 /**
+ * Spawn a CLI that may be a Windows shim (`npm` → npm.cmd, `claude` → claude.cmd).
+ * On Windows a non-.exe command can't be CreateProcess'd directly, so route it
+ * through cmd.exe; on Unix (and for a native .exe) it's spawned directly.
+ */
+function spawnTool(command: string, args: string[]): ReturnType<typeof spawn> {
+  if (process.platform === 'win32' && !/\.exe$/i.test(command)) {
+    return spawn(process.env.ComSpec || 'cmd.exe', ['/c', command, ...args], { windowsHide: true });
+  }
+  return spawn(command, args, { windowsHide: true });
+}
+
+/**
  * Run `claude --version` with a timeout and classify the outcome. A healthy
  * binary prints its version and exits 0; a corrupt/unsigned one is SIGKILL'd by
  * the kernel on Apple Silicon (signal SIGKILL / code 137) before printing.
@@ -39,7 +51,7 @@ export function probeClaudeHealth(timeoutMs = 8000): Promise<ClaudeHealth> {
 
     let child;
     try {
-      child = spawn(claudeBin(), ['--version'], { windowsHide: true });
+      child = spawnTool(claudeBin(), ['--version']);
     } catch (err) {
       done({ ok: false, status: 'error', version: null, detail: `couldn't launch claude: ${msg(err)}` });
       return;
@@ -107,7 +119,7 @@ export function repairClaude(onLine?: (line: string) => void): Promise<RepairRes
 
     let child;
     try {
-      child = spawn('npm', ['install', '-g', NPM_SPEC, '--force'], { windowsHide: true });
+      child = spawnTool('npm', ['install', '-g', NPM_SPEC, '--force']);
     } catch (err) {
       resolve({ ok: false, health: broken(''), error: `couldn't run npm: ${msg(err)}` });
       return;
@@ -125,11 +137,14 @@ export function repairClaude(onLine?: (line: string) => void): Promise<RepairRes
         resolve({ ok: true, health, error: null });
         return;
       }
+      const isWin = process.platform === 'win32';
       let error: string;
-      if (/EACCES|permission denied/i.test(log)) {
-        error = `npm needs elevated permissions here. Run this in Terminal:\n  sudo npm install -g ${NPM_SPEC} --force`;
+      if (/EACCES|EPERM|permission denied|access is denied/i.test(log)) {
+        error = isWin
+          ? `npm needs elevated permissions. Run this in an elevated PowerShell (Run as administrator):\n  npm install -g ${NPM_SPEC} --force`
+          : `npm needs elevated permissions here. Run this in Terminal:\n  sudo npm install -g ${NPM_SPEC} --force`;
       } else if (code !== 0) {
-        error = `npm exited with code ${code}. Try this in Terminal:\n  npm install -g ${NPM_SPEC} --force`;
+        error = `npm exited with code ${code}. Try this in ${isWin ? 'PowerShell' : 'Terminal'}:\n  npm install -g ${NPM_SPEC} --force`;
       } else {
         error = `Reinstall finished but claude still isn't runnable: ${health.detail}`;
       }

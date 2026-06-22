@@ -1,6 +1,7 @@
 name: Build & Release
 
-# Build a release .dmg and publish a GitHub Release on every push to main.
+# Build release installers (macOS .dmg + Windows .exe) and publish a single
+# GitHub Release on every push to main.
 on:
   push:
     branches: [main]
@@ -15,15 +16,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  release:
+  # ── Compute the version ONCE so every platform stamps an identical number ────
+  meta:
     # Put "[skip release]" in a commit message to skip a build.
     if: ${{ !contains(github.event.head_commit.message, '[skip release]') }}
-    runs-on: macos-latest   # required to produce a macOS .dmg
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     steps:
-      - name: Checkout (full history for changelog)
+      - uses: actions/checkout@v7
+      - name: Compute version (major.minor.<run_number>)
+        id: ver
+        run: |
+          BASE=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
+          VERSION="${BASE}.${{ github.run_number }}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building v$VERSION"
+
+  # ── Build each platform's installer in parallel ──────────────────────────────
+  build:
+    needs: meta
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest      # required to produce a macOS .dmg
+            args: "--mac"
+            artifact: dmg
+            glob: dist-app/*.dmg
+          - os: windows-latest    # required to produce a Windows .exe (native node-pty x64)
+            args: "--win --x64"
+            artifact: win-setup
+            glob: dist-app/*-setup.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
         uses: actions/checkout@v7
-        with:
-          fetch-depth: 0   # full history so release notes can diff against the previous tag
 
       - name: Set up Node
         uses: actions/setup-node@v6
@@ -32,33 +60,56 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci   # postinstall (fix-pty-perms) is a safe no-op on Windows
 
-      - name: Compute version (major.minor.<run_number>)
-        id: ver
-        run: |
-          BASE=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
-          VERSION="${BASE}.${{ github.run_number }}"
-          npm pkg set version="$VERSION"   # only touches package.json; not committed
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Building v$VERSION"
+      - name: Pin build version
+        shell: bash    # identical step on both runners; Windows has bash via Git
+        run: npm pkg set version="${{ needs.meta.outputs.version }}"   # only touches package.json; not committed
 
       - name: Compile TypeScript
         run: npm run build
 
-      - name: Package macOS .dmg
-        # No Apple Developer certificate in CI. mac.identity "-" (in package.json)
-        # ad-hoc signs the whole bundle so macOS doesn't report the app as
-        # "damaged"; users still clear quarantine once (see README) since an
-        # ad-hoc signature isn't notarized for Gatekeeper.
-        run: npx electron-builder --mac --publish never
+      # Prove node-pty's win32-x64 prebuild actually loads + spawns under Electron
+      # on the runner BEFORE we package it — the one Windows-native risk in this app.
+      - name: Smoke-test node-pty under Electron (Windows)
+        if: matrix.os == 'windows-latest'
+        run: npx electron scripts/smoke-pty.cjs
+
+      - name: Package installer
+        # No code-signing certificate in CI (mac uses identity "-"; Windows is
+        # unsigned → SmartScreen until a cert is added). --publish never: this
+        # workflow uploads the assets itself in the release job below.
+        run: npx electron-builder ${{ matrix.args }} --publish never
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.glob }}
+          if-no-files-found: error
+
+  # ── Publish one Release carrying both installers ─────────────────────────────
+  release:
+    needs: [meta, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for changelog)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # full history so release notes can diff against the previous tag
+
+      - name: Download built installers
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true   # collapse every artifact into one flat dir
 
       - name: Build release notes
         # A concise, human-readable changelog (what actually changed, from commit
-        # subjects since the last release) + a stable install blurb — instead of
+        # subjects since the last release) + a per-OS install blurb — instead of
         # GitHub's auto notes, which just link out to the commits/PRs.
         env:
-          VERSION: ${{ steps.ver.outputs.version }}
+          VERSION: ${{ needs.meta.outputs.version }}
         run: |
           PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
           if [ -n "$PREV_TAG" ]; then RANGE="${PREV_TAG}..HEAD"; else RANGE="HEAD~15..HEAD"; fi
@@ -71,19 +122,22 @@ jobs:
             | sed -E 's/^/- /' \
             | head -n 20 || true)
           [ -z "$CHANGES" ] && CHANGES="- Maintenance and internal improvements"
-          DMG="Claude Quota Monitor-${VERSION}-arm64.dmg"
           {
-            echo "Native macOS menu-bar app for watching Claude Code usage quota across multiple accounts."
+            echo "Native menu-bar / tray app for watching Claude Code usage quota across multiple accounts."
             echo
             echo "## What's new in v${VERSION}"
             echo "$CHANGES"
             echo
             echo "## Install"
-            echo "1. Download **${DMG}** below (Apple Silicon / arm64)."
-            echo "2. Open it and drag the app into **Applications**."
-            echo "3. **First open:** macOS will block it (unsigned) — right-click the app → **Open → Open**. After that it opens normally."
+            echo "**macOS (Apple Silicon):**"
+            echo "1. Download the **.dmg** below, open it, and drag the app into **Applications**."
+            echo "2. **First open:** macOS blocks it (unsigned) — right-click the app → **Open → Open**. After that it opens normally."
             echo
-            echo "A **gauge icon** appears in your menu bar (top-right) — there's no Dock icon. Requires the \`claude\` CLI installed."
+            echo "**Windows (x64):**"
+            echo "1. Download the **…-x64-setup.exe** below and run it."
+            echo "2. **First run:** SmartScreen shows \"Windows protected your PC\" (unsigned) — click **More info → Run anyway**."
+            echo
+            echo "A **gauge icon** appears in your menu bar / system tray — there's no Dock or taskbar icon. Requires the \`claude\` CLI installed."
           } > RELEASE_NOTES.md
           echo "----- RELEASE_NOTES.md -----"
           cat RELEASE_NOTES.md
@@ -91,7 +145,7 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ steps.ver.outputs.version }}
-          name: v${{ steps.ver.outputs.version }}
+          tag_name: v${{ needs.meta.outputs.version }}
+          name: v${{ needs.meta.outputs.version }}
           body_path: RELEASE_NOTES.md
-          files: dist-app/*.dmg
+          files: artifacts/*

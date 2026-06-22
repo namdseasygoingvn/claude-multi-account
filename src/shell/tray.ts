@@ -27,10 +27,18 @@ export function createTray(ctx: AppContext, deps: TrayDeps): TrayController {
   let autoMinutes = 0; // 0 = off (tray-menu driven; the popover has its own toggle)
 
   function trayImage(): Electron.NativeImage {
-    const file = path.join(REPO_ROOT, 'assets', 'trayTemplate.png');
-    const img = nativeImage.createFromPath(file);
-    img.setTemplateImage(true); // macOS tints it for light/dark menu bars
-    return img;
+    if (process.platform === 'darwin') {
+      const img = nativeImage.createFromPath(path.join(REPO_ROOT, 'assets', 'trayTemplate.png'));
+      img.setTemplateImage(true); // macOS tints it for light/dark menu bars
+      return img;
+    }
+    // Windows/Linux don't tint template images (they'd render as an invisible
+    // solid-black blob), so use a COLORED icon. Windows prefers a multi-size .ico.
+    const file =
+      process.platform === 'win32'
+        ? path.join(REPO_ROOT, 'assets', 'tray.ico')
+        : path.join(REPO_ROOT, 'assets', 'tray.png');
+    return nativeImage.createFromPath(file);
   }
 
   function setAutoRefresh(minutes: number): void {
@@ -77,7 +85,7 @@ export function createTray(ctx: AppContext, deps: TrayDeps): TrayController {
       updateItem,
       { label: 'Repair / update Claude Code…', click: () => deps.repairClaude() },
       { type: 'separator' },
-      { label: 'Quit', accelerator: 'Command+Q', click: () => app.quit() },
+      { label: 'Quit', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() },
     ]);
   }
 

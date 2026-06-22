@@ -8,6 +8,8 @@ import { loadRegistry, saveRegistry, ensureOnboarded } from './registry.js';
 const HOME = os.homedir();
 /** The shared slot's metadata file: the sibling of ~/.claude, not inside it. */
 const SHARED_STATE_FILE = path.join(HOME, '.claude.json');
+/** Command-palette shortcut to quote in "reload VS Code manually" messages. */
+const RELOAD_SHORTCUT = process.platform === 'darwin' ? '⌘⇧P' : 'Ctrl+Shift+P';
 
 // Re-derive these here to avoid a circular import surface; keep in sync with keychain.ts.
 import { sharedSlotService, serviceForConfigDir, copySecret } from './keychain.js';
@@ -133,6 +135,7 @@ export function openCli(label: string): void {
   if (!acc) throw new Error(`unknown account "${label}"`);
   const dir = acc.configDir;
   const email = emailForConfigDir(dir) ?? label;
+  if (process.platform === 'win32') return openCliWindows(label, dir, email);
   // email/label get embedded in a shell script that is later executed, so treat
   // them as untrusted: assign via single-quoted (shQuote'd) vars and print them
   // with `print -r` (no escape/prompt expansion). Parameter expansion isn't
@@ -159,6 +162,53 @@ export function openCli(label: string): void {
   fs.writeFileSync(file, script, { mode: 0o755 });
   const r = spawnSync('/usr/bin/open', [file]);
   if (r.status !== 0) throw new Error('failed to open a Terminal window');
+}
+
+/**
+ * Windows equivalent of openCli: open a NEW console window with
+ * CLAUDE_CONFIG_DIR pinned to this account. The launcher script is STATIC — the
+ * account dir + display strings travel as environment variables (set on the
+ * child below), and the banner prints them via delayed expansion (`!VAR!`),
+ * which never re-parses `& | %` etc. So an email/label containing shell
+ * metacharacters can't inject commands (the macOS path relies on shQuote for
+ * the same guarantee).
+ */
+function openCliWindows(label: string, dir: string, email: string): void {
+  const script =
+    [
+      '@echo off',
+      'setlocal EnableDelayedExpansion',
+      'echo.',
+      'echo   Claude CLI',
+      'echo   account: !CQM_EMAIL!  [!CQM_LABEL!]',
+      'echo   CLAUDE_CONFIG_DIR is set for this window. Start Claude with:  claude',
+      'echo.',
+      'endlocal',
+      '',
+    ].join('\r\n');
+  const safe = label.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const file = path.join(os.tmpdir(), `claude-cli-${safe}-${Date.now()}.cmd`);
+  fs.writeFileSync(file, script);
+
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
+  env.CLAUDE_CONFIG_DIR = dir;
+  env.CQM_EMAIL = email;
+  env.CQM_LABEL = label;
+  // Mirror the app's spawn hygiene so an exported API key can't shadow OAuth.
+  delete env.ANTHROPIC_API_KEY;
+  delete env.ANTHROPIC_AUTH_TOKEN;
+  delete env.ANTHROPIC_BASE_URL;
+  delete env.CLAUDECODE;
+
+  // `start "" cmd /k "<script>"` opens a new window, runs the banner, and leaves
+  // the shell interactive with the env above. windowsVerbatimArguments so cmd
+  // sees the line exactly (start's empty title arg + the quoted script path).
+  const r = spawnSync('cmd.exe', ['/c', `start "" cmd /k "${file}"`], {
+    env,
+    windowsVerbatimArguments: true,
+  });
+  if (r.status !== 0) throw new Error('failed to open a console window');
 }
 
 // ── [Switch VS Code] ──────────────────────────────────────────────────────────
@@ -225,11 +275,15 @@ export function switchVSCode(label: string): SwitchResult {
     reloaded,
     message: reloaded
       ? `VS Code switched to ${targetEmail ?? label} and reloaded.`
-      : `VS Code switched to ${targetEmail ?? label}. Reload VS Code (⌘⇧P → "Reload Window") to apply.`,
+      : `VS Code switched to ${targetEmail ?? label}. Reload VS Code (${RELOAD_SHORTCUT} → "Reload Window") to apply.`,
   };
 }
 
 export function isVSCodeRunning(): boolean {
+  if (process.platform === 'win32') {
+    const r = spawnSync('tasklist', ['/FI', 'IMAGENAME eq Code.exe', '/NH'], { encoding: 'utf8' });
+    return r.status === 0 && /Code\.exe/i.test(r.stdout);
+  }
   return spawnSync('/usr/bin/pgrep', ['-f', 'Visual Studio Code']).status === 0;
 }
 
@@ -241,6 +295,9 @@ export function isVSCodeRunning(): boolean {
  */
 function reloadVSCode(): boolean {
   if (!isVSCodeRunning()) return false;
+  // Scripted reload drives the Command Palette via AppleScript/System Events —
+  // macOS only. Elsewhere the caller tells the user to reload manually.
+  if (process.platform !== 'darwin') return false;
   const lines = [
     'tell application "Visual Studio Code" to activate',
     'delay 0.4',

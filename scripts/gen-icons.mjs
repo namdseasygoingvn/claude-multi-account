@@ -1,8 +1,12 @@
-// Generates the menu-bar tray icons + the app icon as real PNGs, with a tiny
-// dependency-free PNG encoder (zlib is built in). Run: node scripts/gen-icons.mjs
+// Generates the menu-bar tray icons + the app icon as real PNGs (and Windows
+// .ico files), with tiny dependency-free PNG + ICO encoders (zlib is built in).
+// Run: node scripts/gen-icons.mjs
 //   assets/trayTemplate.png      16x16  — macOS template image (alpha only)
 //   assets/trayTemplate@2x.png   32x32
-//   assets/icon.png              512x512 — app/dmg icon
+//   assets/icon.png              512x512 — app/dmg icon (macOS)
+//   assets/icon.ico              16–256  — app/installer icon (Windows; NSIS needs 256²)
+//   assets/tray.ico              16–32   — colored Windows tray icon (not a template)
+//   assets/tray.png              32x32   — colored Linux tray icon
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
@@ -52,6 +56,34 @@ function encodePng(rgba, w, h) {
   }
   const idat = zlib.deflateSync(raw, { level: 9 });
   return Buffer.concat([sig, chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0))]);
+}
+
+/** Pack PNG-encoded images into a single .ico (PNG-in-ICO, supported by Windows
+ *  Vista+ and electron-builder). entries: [{ size, png }]. */
+function encodeIco(entries) {
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(0, 0); // reserved
+  header.writeUInt16LE(1, 2); // type: 1 = icon
+  header.writeUInt16LE(entries.length, 4);
+  const dir = Buffer.alloc(16 * entries.length);
+  let offset = header.length + dir.length;
+  entries.forEach((e, i) => {
+    const o = i * 16;
+    dir[o] = e.size >= 256 ? 0 : e.size; // width (0 ⇒ 256)
+    dir[o + 1] = e.size >= 256 ? 0 : e.size; // height (0 ⇒ 256)
+    // [o+2] colorCount=0, [o+3] reserved=0
+    dir.writeUInt16LE(1, o + 4); // color planes
+    dir.writeUInt16LE(32, o + 6); // bits per pixel
+    dir.writeUInt32LE(e.png.length, o + 8); // bytes in image data
+    dir.writeUInt32LE(offset, o + 12); // offset to image data
+    offset += e.png.length;
+  });
+  return Buffer.concat([header, dir, ...entries.map((e) => e.png)]);
+}
+
+/** RGBA buffer for an orange rounded square with a dark gauge, at any size. */
+function appIcon(size) {
+  return drawGauge(size, { bg: [0xf9, 0x9c, 0x24], ring: [20, 20, 22, 255], needle: [20, 20, 22, 255], rounded: true });
 }
 
 function px(buf, w, x, y, r, g, b, a) {
@@ -118,8 +150,19 @@ for (const [name, size] of [['trayTemplate.png', 16], ['trayTemplate@2x.png', 32
   console.log('wrote', name);
 }
 
-// App icon: orange rounded square with a dark gauge.
-const big = 512;
-const icon = drawGauge(big, { bg: [0xf9, 0x9c, 0x24], ring: [20, 20, 22, 255], needle: [20, 20, 22, 255], rounded: true });
-fs.writeFileSync(path.join(ASSETS, 'icon.png'), encodePng(icon, big, big));
+// App icon (macOS .dmg / dev): orange rounded square with a dark gauge.
+fs.writeFileSync(path.join(ASSETS, 'icon.png'), encodePng(appIcon(512), 512, 512));
 console.log('wrote icon.png');
+
+// Windows app/installer icon. electron-builder's NSIS target needs a 256² entry.
+const icoSizes = [16, 24, 32, 48, 64, 128, 256];
+const appEntries = icoSizes.map((s) => ({ size: s, png: encodePng(appIcon(s), s, s) }));
+fs.writeFileSync(path.join(ASSETS, 'icon.ico'), encodeIco(appEntries));
+console.log('wrote icon.ico');
+
+// Colored tray icon for Windows/Linux (template images render invisible there).
+const trayEntries = [16, 24, 32].map((s) => ({ size: s, png: encodePng(appIcon(s), s, s) }));
+fs.writeFileSync(path.join(ASSETS, 'tray.ico'), encodeIco(trayEntries));
+console.log('wrote tray.ico');
+fs.writeFileSync(path.join(ASSETS, 'tray.png'), encodePng(appIcon(32), 32, 32));
+console.log('wrote tray.png');
