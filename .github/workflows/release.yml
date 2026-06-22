@@ -77,10 +77,16 @@ jobs:
         run: |
           # node-pty spawns a ConPTY console-list helper that throws "AttachConsole
           # failed" in a console-less CI step — it can taint the process exit code
-          # even when the PTY itself works fine. So gate on our success sentinel
-          # (printed only after pty.spawn succeeds and yields output), not on the
-          # exit code, which the helper's crash makes unreliable here.
-          npx electron scripts/smoke-pty.cjs 2>&1 | tee smoke.out
+          # (seen as 127) even when the PTY itself works fine. So gate on our success
+          # sentinel (printed only after pty.spawn succeeds and yields output), not on
+          # the exit code, which the helper's crash makes unreliable here.
+          #
+          # `|| true` is load-bearing: this step runs under `set -eo pipefail`, so
+          # without it the helper-tainted exit code propagates through the pipeline
+          # and errexit kills the step BEFORE the grep gate can run. Swallow it here
+          # and let grep be the sole arbiter — a genuine load/spawn failure prints no
+          # sentinel, so grep still fails the build.
+          npx electron scripts/smoke-pty.cjs 2>&1 | tee smoke.out || true
           grep -q "node-pty OK under Electron" smoke.out
 
       - name: Package installer
