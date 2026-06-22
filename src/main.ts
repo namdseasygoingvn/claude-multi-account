@@ -25,7 +25,8 @@ import {
 } from './updater.js';
 import { probeClaudeHealth, repairClaude, type ClaudeHealth } from './claude-health.js';
 import { openCli, switchVSCode, getActiveVSCodeLabel, isVSCodeRunning } from './switcher.js';
-import type { AccountConfig, AccountStatus, UsageResult } from './types.js';
+import { fetchActiveAccountUsage } from './usage-api.js';
+import type { AccountConfig, AccountStatus, ParsedUsage, UsageResult } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -145,9 +146,41 @@ function heldByVSCodeResult(acc: AccountConfig): UsageResult {
     parsed: prior?.parsed ?? null, // keep the last-known bars if we have them
     raw: '',
     error:
-      "active in VS Code — its extension is using this account's usage endpoint, so live usage can't be read here. Switch VS Code to another account to refresh it.",
+      "active in VS Code — couldn't read live usage just now. Its extension uses this account's usage endpoint; try again or switch VS Code to another account.",
     durationMs: 0,
   };
+}
+
+/**
+ * Usage for the account VS Code holds. Its /usage endpoint is rate-limited by
+ * the extension, but the message endpoint isn't — so read usage from the
+ * unified rate-limit headers on a tiny API call (session + weekly; the
+ * per-model weekly line isn't in headers). Falls back to a calm note if the API
+ * path is unavailable. Same single result fans out to every label sharing it.
+ */
+async function heldGroupResults(group: AccountConfig[]): Promise<UsageResult[]> {
+  let parsed: ParsedUsage | null = null;
+  try {
+    parsed = await fetchActiveAccountUsage();
+  } catch {
+    parsed = null;
+  }
+  if (parsed && parsed.sections.length > 0) {
+    const p = parsed;
+    const now = new Date().toISOString();
+    return group.map((acc) => ({
+      label: acc.label,
+      checkedAt: now,
+      ok: true,
+      loggedIn: true,
+      rateLimited: false,
+      parsed: p,
+      raw: '',
+      error: null,
+      durationMs: 0,
+    }));
+  }
+  return group.map(heldByVSCodeResult);
 }
 
 /**
@@ -188,20 +221,16 @@ async function runUsageCheck(labels?: string[]): Promise<UsageResult[]> {
   };
 
   try {
-    const out: UsageResult[] = [];
+    // VS Code is polling the held account's /usage endpoint, so scraping /usage
+    // for it is futile — read it from the message endpoint's rate-limit headers
+    // instead (heldGroupResults). Everyone else goes through the normal scrape.
+    const heldGroups: AccountConfig[][] = [];
     const liveGroups: AccountConfig[][] = [];
     for (const [key, group] of groups) {
-      // VS Code is polling this exact account; a live check is guaranteed to be
-      // rate-limited, so skip the doomed spawn and report it plainly instead.
-      if (heldEmail && key === heldEmail) {
-        const results = group.map(heldByVSCodeResult);
-        apply(results);
-        out.push(...results);
-      } else {
-        liveGroups.push(group);
-      }
+      (heldEmail && key === heldEmail ? heldGroups : liveGroups).push(group);
     }
-    const liveResults = await mapPooled(liveGroups, USAGE_CHECK_CONCURRENCY, async (group) => {
+
+    const livePromise = mapPooled(liveGroups, USAGE_CHECK_CONCURRENCY, async (group) => {
       const run = await checkUsage(group[0], {
         // mirror progress to every label sharing this account so all cards animate
         onPhase: (phase) => {
@@ -213,8 +242,18 @@ async function runUsageCheck(labels?: string[]): Promise<UsageResult[]> {
       apply(results);
       return results;
     });
-    out.push(...liveResults.flat());
-    return out;
+
+    const heldPromise = Promise.all(
+      heldGroups.map(async (group) => {
+        for (const acc of group) send('usage-status', { label: acc.label, phase: 'reading usage via API' });
+        const results = await heldGroupResults(group);
+        apply(results);
+        return results;
+      }),
+    );
+
+    const [live, held] = await Promise.all([livePromise, heldPromise]);
+    return [...live.flat(), ...held.flat()];
   } finally {
     for (const l of labelsRun) checking.delete(l);
     send('check-done', { labels: labelsRun });

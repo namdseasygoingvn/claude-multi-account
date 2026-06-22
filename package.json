@@ -18,7 +18,7 @@
     "gen-icons": "node scripts/gen-icons.mjs",
     "dist": "npm run build && electron-builder",
     "spike": "tsx scripts/spike.ts",
-    "test": "tsx --test test/parse.test.ts"
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "fix-path": "^5.0.0",
