@@ -11,6 +11,7 @@ import {
 } from '../registry.js';
 import { getActiveVSCodeLabel, openCli, switchVSCode } from '../switcher.js';
 import type { AppContext } from '../context.js';
+import type { LanController } from './lan.js';
 import type { AccountStatus, UsageResult } from '../types.js';
 
 /** Cross-module actions the IPC layer delegates to, injected by main.ts. */
@@ -19,6 +20,8 @@ export interface IpcDeps {
   tryStartLogin(label: string, configDir: string): Promise<boolean>;
   /** Fit the popover to a measured content height (geometry lives in window.ts). */
   resizeWindow(height: number): void;
+  /** LAN account lending (lend server + receive client). */
+  lan: LanController;
 }
 
 /** Register every renderer-callable IPC handler (replaces the old express routes). */
@@ -105,6 +108,21 @@ export function registerIpc(ctx: AppContext, deps: IpcDeps): void {
   ipcMain.handle('vscode:switch', (_e, payload: { label: string }) => {
     if (!getAccount(payload.label)) throw new Error(`unknown account "${payload.label}"`);
     return switchVSCode(payload.label);
+  });
+
+  ipcMain.handle('lan:lend-start', (_e, payload: { label: string }) => {
+    if (!getAccount(payload.label)) throw new Error(`unknown account "${payload.label}"`);
+    return deps.lan.lendStart(payload.label);
+  });
+
+  ipcMain.handle('lan:lend-stop', () => deps.lan.lendStop());
+
+  ipcMain.handle('lan:receive', (_e, payload: { host: string; port: number; pin: string }) => {
+    const host = typeof payload?.host === 'string' ? payload.host.trim() : '';
+    const port = Number(payload?.port);
+    const pin = typeof payload?.pin === 'string' ? payload.pin.trim() : '';
+    if (!host || !Number.isInteger(port) || port <= 0) throw new Error('enter an address as host:port');
+    return deps.lan.receive(host, port, pin);
   });
 
   ipcMain.handle('shell:openExternal', (_e, payload: { url: string }) => {

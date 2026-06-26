@@ -9,6 +9,7 @@ import { runUsageCheck as runUsageCheckImpl } from './usage-orchestrator.js';
 import { createWindowController } from './shell/window.js';
 import { createTray } from './shell/tray.js';
 import { createRepair } from './shell/repair.js';
+import { createLan } from './shell/lan.js';
 import { registerIpc } from './shell/ipc.js';
 
 // Restore the login-shell PATH and pin CLAUDE_BIN before anything spawns `claude`.
@@ -40,6 +41,7 @@ const ctx = createContext(
 
 const runUsageCheck = (labels?: string[]) => runUsageCheckImpl(ctx, labels);
 
+const lan = createLan(ctx);
 const windowCtl = createWindowController(ctx);
 const repair = createRepair(ctx, { showWindow: () => windowCtl.show() });
 const trayCtl = createTray(ctx, {
@@ -57,6 +59,7 @@ app.whenReady().then(() => {
     runUsageCheck,
     tryStartLogin: repair.tryStartLogin,
     resizeWindow: (h) => windowCtl.resize(h),
+    lan,
   });
   windowCtl.create();
   trayCtl.create();

@@ -3,6 +3,7 @@ import { on } from './api.js';
 import { renderCards, updateToolbar } from './cards.js';
 import { loadAccounts } from './actions.js';
 import { openLogin, setModalStatus, renderModalUrls, loginSucceeded } from './modal.js';
+import { onLendStatus } from './lan.js';
 
 const EVENT_CHANNELS = [
   'login-status',
@@ -14,6 +15,7 @@ const EVENT_CHANNELS = [
   'check-start',
   'check-done',
   'account-added',
+  'lan-lend-status',
 ];
 
 // Subscribe to each push channel; reconstruct the old `{ type, ...payload }`
@@ -77,6 +79,9 @@ function handleWs(m) {
       updateToolbar();
       renderCards();
       loadAccounts(); // login status may have changed
+      break;
+    case 'lan-lend-status':
+      onLendStatus(m);
       break;
   }
 }
