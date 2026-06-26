@@ -25,5 +25,6 @@ export const ACCOUNT_ACTIONS = [
     cls: (a) => (state.activeVSCode === a.label ? 'vs-on' : ''),
   },
   { id: 'login', icon: 'log-in', label: 'Sign in' },
+  { id: 'lend', icon: 'share-2', label: 'Lend to another PC', disabled: (a) => !a.loggedIn },
   { id: 'delete', icon: 'trash-2', label: 'Delete account', cls: 'danger' },
 ];

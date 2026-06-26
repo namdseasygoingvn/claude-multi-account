@@ -214,6 +214,14 @@
     .ok .t { font-weight: 600; color: var(--green); }
     .ok .e { font-size: 12px; color: var(--label-2); }
 
+    /* LAN lend / receive sheet */
+    .lan-pin { margin: 10px 0 4px; font-size: 34px; font-weight: 700; letter-spacing: 0.18em; text-align: center; font-variant-numeric: tabular-nums; font-family: ui-monospace, "SF Mono", Menlo, monospace; -webkit-user-select: text; user-select: text; }
+    .lan-addr { margin: 4px 0 12px; padding: 7px; border-radius: 6px; background: var(--field); text-align: center; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; color: var(--label); -webkit-user-select: text; user-select: text; }
+    .lan-input { display: block; width: 100%; margin: 0 0 8px; padding: 7px 8px; border: 1px solid var(--sep); border-radius: 6px; background: var(--field); color: var(--label); font-size: 13px; -webkit-user-select: text; user-select: text; }
+    .lan-input:focus { outline: 1.5px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+    .lan-go { width: 100%; margin-top: 2px; padding: 7px; border: none; border-radius: 6px; background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 600; cursor: default; }
+    .lan-go:hover { filter: brightness(1.06); }
+
     .hidden { display: none !important; }
 
     ::-webkit-scrollbar { width: 8px; }
@@ -236,6 +244,9 @@
     </div>
     <div class="mitem" id="add-btn">
       <i data-lucide="user-plus"></i>Add account…
+    </div>
+    <div class="mitem" id="receive-btn">
+      <i data-lucide="download"></i>Receive account…
     </div>
     <div class="auto-row">
       <label><input type="checkbox" id="auto-toggle">Auto-refresh</label>
@@ -276,6 +287,32 @@
             <div id="modal-success-email" class="e"></div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LAN lend / receive sheet -->
+  <div id="lan-modal" class="sheet-bg hidden">
+    <div class="sheet">
+      <button id="lan-close" class="ibtn close" title="Close"><i data-lucide="x"></i></button>
+      <div class="badge"><i data-lucide="radio"></i></div>
+      <h2 id="lan-title">Lend account</h2>
+
+      <div id="lan-lend" class="hidden">
+        <p id="lan-lend-sub" class="sub"></p>
+        <div class="lan-pin" id="lan-pin">····</div>
+        <p class="note" style="text-align:center;margin-top:0">On the other PC: “Receive account…”, then enter the address below and this PIN.</p>
+        <div class="lan-addr" id="lan-addr">starting…</div>
+        <div class="prog"><span class="spin"></span><span id="lan-lend-status">starting…</span></div>
+        <p class="note">Keep this open until the transfer finishes. The PIN works once and the window closes after 2 minutes.</p>
+      </div>
+
+      <div id="lan-recv" class="hidden">
+        <p class="sub">Enter the address and PIN shown on the lending PC.</p>
+        <input id="lan-recv-addr" class="lan-input" type="text" placeholder="192.168.1.42:50912" autocapitalize="off" autocomplete="off" spellcheck="false">
+        <input id="lan-recv-pin" class="lan-input" type="text" inputmode="numeric" maxlength="4" placeholder="PIN (4 digits)">
+        <button id="lan-recv-go" class="lan-go">Receive</button>
+        <p id="lan-recv-status" class="note"></p>
       </div>
     </div>
   </div>

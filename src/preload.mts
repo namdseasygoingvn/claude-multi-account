@@ -14,6 +14,9 @@ const INVOKE = new Set([
   'vscode:switch',
   'shell:openExternal',
   'win:resize',
+  'lan:lend-start',
+  'lan:lend-stop',
+  'lan:receive',
 ]);
 
 // Push channels the main process emits (replaces the old WebSocket messages).
@@ -28,6 +31,7 @@ const EVENTS = new Set([
   'check-start',
   'check-done',
   'account-added',
+  'lan-lend-status',
 ]);
 
 contextBridge.exposeInMainWorld('api', {
