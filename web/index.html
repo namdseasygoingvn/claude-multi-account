@@ -188,6 +188,30 @@
     .mins { width: 34px; height: 18px; padding: 0 3px; border: 1px solid var(--sep); border-radius: 4px; background: var(--field); color: var(--label); font-size: 11px; text-align: center; }
     .mins:focus { outline: 1.5px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 
+    /* Auto-update row (lives at the bottom of the action bar) */
+    .update-row { margin: 1px 5px 0; }
+    .update-row.hidden { display: none; }
+    .u-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 7px; border-radius: 5px; font-size: 12px;
+      color: var(--label-2);
+    }
+    .u-item svg { flex: 0 0 auto; width: 15px; height: 15px; color: var(--label-2); }
+    .u-item.click { cursor: default; }
+    .u-item.click:hover { background: var(--accent); color: var(--on-accent); }
+    .u-item.click:hover svg { color: var(--on-accent); }
+    .u-item.busy { opacity: 0.6; }
+    .u-item.ready { color: var(--accent); }
+    .u-item.ready svg { color: var(--accent); }
+    .u-item.ready.click:hover { color: var(--on-accent); }
+    .u-item.ready.click:hover svg { color: var(--on-accent); }
+    .u-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .u-bar {
+      flex: 0 0 auto; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 11px; letter-spacing: -0.5px; color: var(--accent);
+    }
+    .u-pct { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+
     /* Spinner */
     .spin { flex: 0 0 auto; width: 13px; height: 13px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; opacity: 0.7; animation: spin 0.7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -264,6 +288,8 @@
         <input type="text" id="auto-mins" inputmode="numeric" value="15" class="mins" aria-label="auto-refresh minutes"> min
       </span>
     </div>
+    <!-- Auto-update row: check → download (with text progress bar) → restart -->
+    <div id="update-row" class="update-row"></div>
   </div>
   <div class="sep"></div>
 

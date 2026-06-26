@@ -8,6 +8,7 @@ import { addAccount, openLogin, showModal } from './modal.js';
 import { lendAccount, closeLan, initReceive } from './lan.js';
 import { connectEvents } from './events.js';
 import { initReorder } from './reorder.js';
+import { initUpdate } from './update.js';
 import { fitWindow } from './window-fit.js';
 
 // Behavior half of the account-action registry (appearance is in
@@ -87,6 +88,7 @@ document.addEventListener('visibilitychange', () => {
 
 refreshIcons();
 connectEvents();
+initUpdate(); // render the auto-update row + subscribe to update-state events
 // Load accounts, then auto-check usage once so the first quota shows without the
 // user having to click "Check usage".
 loadAccounts().then(() => {

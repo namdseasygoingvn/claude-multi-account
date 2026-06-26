@@ -10,6 +10,7 @@ import {
   reorderAccounts,
 } from '../registry.js';
 import { getActiveVSCodeLabel, openCli, switchVSCode } from '../switcher.js';
+import { checkForUpdates, downloadUpdate, installUpdate, getUpdateSnapshot } from '../updater.js';
 import type { AppContext } from '../context.js';
 import type { LanController } from './lan.js';
 import type { AccountStatus, UsageResult } from '../types.js';
@@ -127,6 +128,23 @@ export function registerIpc(ctx: AppContext, deps: IpcDeps): void {
     const pin = typeof payload?.pin === 'string' ? payload.pin.trim() : '';
     if (!host || !Number.isInteger(port) || port <= 0) throw new Error('enter an address as host:port');
     return deps.lan.receive(host, port, pin);
+  });
+
+  // ── Auto-update ───────────────────────────────────────────────────────────
+  // The popover's update row drives these; live state is pushed back as the
+  // 'update-state' event (wired in main.ts via onUpdateStateChange).
+  ipcMain.handle('update:state', () => getUpdateSnapshot());
+  ipcMain.handle('update:check', async () => {
+    await checkForUpdates({ notifyOnResult: true });
+    return getUpdateSnapshot();
+  });
+  ipcMain.handle('update:download', () => {
+    void downloadUpdate();
+    return getUpdateSnapshot();
+  });
+  ipcMain.handle('update:install', () => {
+    void installUpdate();
+    return getUpdateSnapshot();
   });
 
   ipcMain.handle('shell:openExternal', (_e, payload: { url: string }) => {

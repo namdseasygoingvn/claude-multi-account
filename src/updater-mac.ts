@@ -1,24 +1,23 @@
 // ── macOS auto-update — DIY .dmg swap ─────────────────────────────────────────
 // There's no code-signing cert in CI, and Squirrel.Mac refuses to apply unsigned
 // updates, so electron-updater can't help here. Instead we poll the Releases API,
-// then mount the .dmg and swap the .app bundle in place and relaunch — no Finder
-// "replace?"/"in use" dialog, no drag-to-Applications. Because the app (not a
-// browser) fetched the .dmg, the swapped bundle carries no quarantine flag, so
-// the relaunch also skips Gatekeeper.
-import { execFile, spawn } from 'node:child_process';
-import { constants as fsConstants, createWriteStream } from 'node:fs';
-import { access, mkdir, readdir, writeFile } from 'node:fs/promises';
+// download the .dmg ourselves (reporting progress to the popover), then mount it
+// and swap the .app bundle in place + relaunch (see updater-mac-apply). Because
+// the app (not a browser) fetched the .dmg, the swapped bundle carries no
+// quarantine flag, so the relaunch also skips Gatekeeper.
+import { createWriteStream } from 'node:fs';
+import { unlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { promisify } from 'node:util';
 import { app, shell } from 'electron';
 import {
   cmpVersion,
   getAvailableUpdate,
   isDownloading,
   isInstalling,
+  isReady,
   LATEST_URL,
   notify,
   pickAsset,
@@ -29,12 +28,14 @@ import {
   type CheckOpts,
   type UpdateInfo,
 } from './updater-shared.js';
-import { RELAUNCH_SCRIPT } from './updater-mac-relaunch.js';
+import { applyDmg } from './updater-mac-apply.js';
 
-const execFileP = promisify(execFile);
+// Path of the .dmg we've fully downloaded and staged, ready for installUpdateMac.
+let stagedDmg: string | null = null;
 
 /** Poll the GitHub Releases API directly (see module header for why). */
 export async function checkForUpdatesMac(opts: CheckOpts): Promise<UpdateInfo | null> {
+  setUpdateState({ checking: true, error: null });
   let json: {
     tag_name?: string;
     html_url?: string;
@@ -45,6 +46,7 @@ export async function checkForUpdatesMac(opts: CheckOpts): Promise<UpdateInfo | 
     if (!res.ok) throw new Error(`GitHub API ${res.status}`);
     json = await res.json();
   } catch {
+    setUpdateState({ checking: false, error: 'Update check failed' });
     if (opts.notifyOnResult) {
       notify('Update check failed', "Couldn't reach GitHub. Check your connection and try again.");
     }
@@ -56,7 +58,7 @@ export async function checkForUpdatesMac(opts: CheckOpts): Promise<UpdateInfo | 
   const current = app.getVersion();
 
   if (!remote || cmpVersion(remote, current) <= 0) {
-    if (getAvailableUpdate()) setUpdateState({ available: null });
+    setUpdateState({ checking: false, available: null, ready: false });
     if (opts.notifyOnResult) {
       notify("You're up to date", `Claude Quota Monitor v${current} is the latest version.`);
     }
@@ -71,86 +73,29 @@ export async function checkForUpdatesMac(opts: CheckOpts): Promise<UpdateInfo | 
     assetUrl: asset?.url ?? null,
     assetName: asset?.name ?? null,
   };
-  setUpdateState({ available });
+  setUpdateState({ checking: false, available });
   if (opts.notifyOnUpdate) {
-    notify('Update available', `Claude Quota Monitor ${tag} is ready — click to install.`, () =>
-      void downloadAndInstallMac(),
-    );
+    notify('Update available', `Claude Quota Monitor ${tag} is ready to download.`);
   }
   return available;
 }
 
 /**
- * Install the downloaded .dmg in place and relaunch — no Finder drag, no
- * "replace?"/"in use" dialogs. Mounts the dmg, then hands a detached helper the
- * job of swapping the bundle once we quit. Returns true if the relauncher was
- * launched (app is about to quit); false to fall back to opening the dmg.
+ * Download the available .dmg to a temp file, reporting progress to the popover.
+ * On success the file is staged (stagedDmg) and the UI flips to "ready" — the
+ * actual bundle swap waits for installUpdateMac(). No installer asset for this
+ * platform → just open the release page.
  */
-async function applyDmg(dmgPath: string): Promise<boolean> {
-  if (process.platform !== 'darwin' || !app.isPackaged) return false;
-
-  const exe = app.getPath('exe');
-  const i = exe.indexOf('.app/');
-  if (i === -1) return false;
-  const appBundle = exe.slice(0, i + 4); // e.g. /Applications/Claude Quota Monitor.app
-
-  // We need to replace the bundle without elevation; if not, fall back to manual.
-  try {
-    await access(path.dirname(appBundle), fsConstants.W_OK);
-  } catch {
-    return false;
-  }
-
-  const mount = path.join(os.tmpdir(), `cqm-mnt-${process.pid}-${Date.now()}`);
-  try {
-    await mkdir(mount, { recursive: true });
-    await execFileP('hdiutil', ['attach', dmgPath, '-nobrowse', '-noverify', '-mountpoint', mount]);
-  } catch {
-    return false;
-  }
-
-  let srcApp: string | null = null;
-  try {
-    const appName = (await readdir(mount)).find((n) => n.endsWith('.app'));
-    if (appName) srcApp = path.join(mount, appName);
-  } catch {
-    /* fall through to detach + bail */
-  }
-  if (!srcApp) {
-    await execFileP('hdiutil', ['detach', mount, '-quiet']).catch(() => {});
-    return false;
-  }
-
-  const staging = appBundle.replace(/\.app$/, '.update.app');
-  const scriptPath = path.join(os.tmpdir(), `cqm-relaunch-${process.pid}-${Date.now()}.sh`);
-  await writeFile(scriptPath, RELAUNCH_SCRIPT, { mode: 0o755 });
-
-  notify('Installing update', `Updating to ${getAvailableUpdate()?.tag ?? 'the latest version'} and restarting…`);
-
-  setUpdateState({ installing: true });
-  spawn('/bin/bash', [scriptPath, String(process.pid), srcApp, appBundle, staging, mount, dmgPath, scriptPath], {
-    detached: true,
-    stdio: 'ignore',
-  }).unref();
-
-  // Let the notification render, then quit so the helper can swap the
-  // (no-longer-running) bundle and relaunch the new version.
-  setTimeout(() => app.quit(), 500);
-  return true;
-}
-
-/** Download the available .dmg, install it in place, and relaunch. */
-export async function downloadAndInstallMac(): Promise<void> {
+export async function downloadUpdateMac(): Promise<void> {
   const info = getAvailableUpdate();
-  if (!info || isDownloading() || isInstalling()) return;
+  if (!info || isDownloading() || isInstalling() || isReady()) return;
 
-  // No installer asset for this platform → just open the release page.
   if (!info.assetUrl) {
     await shell.openExternal(info.htmlUrl);
     return;
   }
 
-  setUpdateState({ downloading: true });
+  setUpdateState({ downloading: true, progress: 0, error: null });
   try {
     // Keep the published filename (it encodes the arch + "-setup"); fall back to
     // a platform-correct extension if the API somehow omitted the name.
@@ -158,21 +103,52 @@ export async function downloadAndInstallMac(): Promise<void> {
     const filePath = path.join(os.tmpdir(), fileName);
     const res = await fetch(info.assetUrl, { headers: { 'User-Agent': UA } });
     if (!res.ok || !res.body) throw new Error(`download failed: ${res.status}`);
-    // Bridge the web ReadableStream from fetch() to a Node stream for piping.
-    await pipeline(Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]), createWriteStream(filePath));
 
-    // Preferred: install it ourselves and relaunch — no Finder dialogs.
-    if (await applyDmg(filePath)) return;
+    // Bridge the web ReadableStream to a Node stream, counting bytes so the
+    // popover can show a live percentage (Content-Length permitting).
+    const total = Number(res.headers.get('content-length')) || 0;
+    let seen = 0;
+    let lastPct = 0;
+    const src = Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]);
+    src.on('data', (chunk: Buffer) => {
+      seen += chunk.length;
+      if (total <= 0) return;
+      const pct = Math.min(99, Math.round((seen / total) * 100));
+      if (pct !== lastPct) {
+        lastPct = pct;
+        setUpdateState({ progress: pct }); // only on whole-% change — the data event is per-chunk
+      }
+    });
+    await pipeline(src, createWriteStream(filePath));
 
-    // Fallback (not packaged / no write access / unexpected layout): hand the
-    // downloaded installer to the OS so the user can finish manually.
-    notify('Update downloaded', 'Opening the installer — drag the app into Applications to finish.');
-    await shell.openPath(filePath);
+    stagedDmg = filePath;
+    setUpdateState({ downloading: false, progress: 100, ready: true });
+    notify('Update ready', `Claude Quota Monitor ${info.tag} is ready — restart to install.`, () =>
+      void installUpdateMac(),
+    );
   } catch {
-    // Last resort: open the release page so the user can grab it manually.
+    setUpdateState({ downloading: false, progress: null, error: 'Download failed' });
     notify('Update failed', 'Opening the release page so you can download it manually.');
     await shell.openExternal(info.htmlUrl);
-  } finally {
-    setUpdateState({ downloading: false });
   }
+}
+
+/** Install the staged .dmg in place and relaunch (downloading first if needed). */
+export async function installUpdateMac(): Promise<void> {
+  if (isInstalling()) return;
+  if (!stagedDmg) {
+    await downloadUpdateMac();
+    if (!stagedDmg) return;
+  }
+
+  // Preferred: install it ourselves and relaunch — no Finder dialogs.
+  if (await applyDmg(stagedDmg)) return;
+
+  // Fallback (not packaged / no write access / unexpected layout): hand the
+  // downloaded installer to the OS so the user can finish manually.
+  setUpdateState({ installing: false });
+  notify('Update downloaded', 'Opening the installer — drag the app into Applications to finish.');
+  await shell.openPath(stagedDmg).catch(async () => {
+    await unlink(stagedDmg!).catch(() => {});
+  });
 }

@@ -3,7 +3,7 @@ import { app } from 'electron';
 import { setupEnvironment } from './bootstrap.js';
 import { setDataRoot } from './paths.js';
 import { LoginManager } from './logins.js';
-import { checkForUpdates } from './updater.js';
+import { checkForUpdates, getUpdateSnapshot, onUpdateStateChange } from './updater.js';
 import { createContext } from './context.js';
 import { runUsageCheck as runUsageCheckImpl } from './usage-orchestrator.js';
 import { createWindowController } from './shell/window.js';
@@ -48,6 +48,7 @@ const trayCtl = createTray(ctx, {
   addAccount: () => void repair.addAccountFlow(),
   repairClaude: () => void repair.repairClaudeMenu(),
   toggleWindow: () => windowCtl.toggle(),
+  showWindow: () => windowCtl.show(),
   shareAllAccounts: () => {
     windowCtl.show();
     ctx.send('lan-share-all', {});
@@ -60,6 +61,10 @@ const trayCtl = createTray(ctx, {
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 app.on('second-instance', () => windowCtl.show());
+
+// Push every update state change to the popover so its update row stays live
+// (the renderer also fetches an initial snapshot on load via 'update:state').
+onUpdateStateChange(() => ctx.send('update-state', getUpdateSnapshot()));
 
 app.whenReady().then(() => {
   if (process.platform === 'darwin') app.dock?.hide(); // menu-bar-only app

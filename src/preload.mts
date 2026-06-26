@@ -18,6 +18,10 @@ const INVOKE = new Set([
   'lan:lend-stop',
   'lan:discover',
   'lan:receive',
+  'update:state',
+  'update:check',
+  'update:download',
+  'update:install',
 ]);
 
 // Push channels the main process emits (replaces the old WebSocket messages).
@@ -35,6 +39,7 @@ const EVENTS = new Set([
   'lan-lend-status',
   'lan-share-all',
   'lan-receive',
+  'update-state',
 ]);
 
 contextBridge.exposeInMainWorld('api', {

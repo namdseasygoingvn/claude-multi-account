@@ -2,7 +2,7 @@ import path from 'node:path';
 import { app, Menu, Tray, nativeImage } from 'electron';
 
 import { REPO_ROOT } from '../paths.js';
-import { checkForUpdates, downloadAndInstall, getAvailableUpdate, isDownloading } from '../updater.js';
+import { checkForUpdates, getUpdateSnapshot } from '../updater.js';
 import type { AppContext } from '../context.js';
 
 /** Cross-module actions the tray menu triggers, injected by main.ts. */
@@ -13,6 +13,8 @@ export interface TrayDeps {
   repairClaude(): void;
   /** Tray-icon click: show the popover if hidden, hide it if visible. */
   toggleWindow(): void;
+  /** Open the popover (the update row + progress UI lives there). */
+  showWindow(): void;
   /** "LAN ▸ Share all accounts…" — show the popover and start the share-all flow. */
   shareAllAccounts(): void;
   /** "LAN ▸ Receive account…" — show the popover and open the receive flow. */
@@ -41,14 +43,29 @@ export function createTray(ctx: AppContext, deps: TrayDeps): TrayController {
   }
 
   function buildContextMenu(): Electron.Menu {
-    const update = getAvailableUpdate();
-    const updateItem: Electron.MenuItemConstructorOptions = isDownloading()
-      ? { label: 'Downloading update…', enabled: false }
-      : update
-        ? { label: `Install update ${update.tag} & restart`, click: () => void downloadAndInstall() }
-        : {
+    // The rich update flow (download progress, "restart to update") lives in the
+    // popover; once an update is in play the menu just opens the popover. Only
+    // the idle "Check for updates" runs straight from here.
+    const snap = getUpdateSnapshot();
+    const updateItem: Electron.MenuItemConstructorOptions =
+      snap.phase === 'idle' || snap.phase === 'error'
+        ? {
             label: 'Check for updates',
             click: () => void checkForUpdates({ notifyOnUpdate: true, notifyOnResult: true }),
+          }
+        : {
+            label:
+              snap.phase === 'checking'
+                ? 'Checking for updates…'
+                : snap.phase === 'available'
+                  ? `Update ${snap.tag} available…`
+                  : snap.phase === 'downloading'
+                    ? `Downloading update… ${snap.progress ?? 0}%`
+                    : snap.phase === 'ready'
+                      ? `Restart to update to ${snap.tag}`
+                      : 'Updating…',
+            enabled: snap.phase !== 'installing',
+            click: () => deps.showWindow(),
           };
     return Menu.buildFromTemplate([
       { label: `Claude Quota Monitor v${app.getVersion()}`, enabled: false },

@@ -29,8 +29,12 @@ export interface CheckOpts {
 // ── Shared mutable state ──────────────────────────────────────────────────────
 const state = {
   available: null as UpdateInfo | null,
+  checking: false, // a check is in flight (manual or auto)
   downloading: false,
+  progress: null as number | null, // download progress 0–100 (null = unknown/none)
+  ready: false, // downloaded + staged — ready to restart & install
   installing: false, // a relaunch has been scheduled — block re-entry
+  error: null as string | null, // last check/download failure, for the UI
 };
 let onChange: (() => void) | null = null;
 
@@ -44,6 +48,9 @@ export function isDownloading(): boolean {
 export function isInstalling(): boolean {
   return state.installing;
 }
+export function isReady(): boolean {
+  return state.ready;
+}
 /** Called whenever update/download state changes, so the caller can refresh UI. */
 export function onUpdateStateChange(cb: () => void): void {
   onChange = cb;
@@ -53,6 +60,50 @@ export function onUpdateStateChange(cb: () => void): void {
 export function setUpdateState(patch: Partial<typeof state>): void {
   Object.assign(state, patch);
   onChange?.();
+}
+
+// ── Renderer snapshot ─────────────────────────────────────────────────────────
+// The popover's update row is driven entirely by this single derived snapshot,
+// pushed on every state change (see main.ts wiring → 'update-state' IPC event).
+export type UpdatePhase =
+  | 'idle' // no update known — offer "Check for updates"
+  | 'checking' // a check is running — dim + "Checking…"
+  | 'available' // newer version found — offer "Download vX.Y.Z"
+  | 'downloading' // fetching the installer — show a text progress bar
+  | 'ready' // downloaded + staged — offer "Restart to update"
+  | 'installing' // relaunch scheduled — "Updating…"
+  | 'error'; // last check/download failed — offer to retry
+
+export interface UpdateSnapshot {
+  phase: UpdatePhase;
+  version: string | null;
+  tag: string | null;
+  progress: number | null;
+  error: string | null;
+}
+
+/** Collapse the mutable state into the one phase the renderer renders. */
+export function getUpdateSnapshot(): UpdateSnapshot {
+  const phase: UpdatePhase = state.installing
+    ? 'installing'
+    : state.downloading
+      ? 'downloading'
+      : state.ready
+        ? 'ready'
+        : state.available
+          ? 'available'
+          : state.checking
+            ? 'checking'
+            : state.error
+              ? 'error'
+              : 'idle';
+  return {
+    phase,
+    version: state.available?.version ?? null,
+    tag: state.available?.tag ?? null,
+    progress: state.progress,
+    error: state.error,
+  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
