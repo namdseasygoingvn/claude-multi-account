@@ -31,6 +31,8 @@ function view(snap) {
       return { cls: 'click ready', icon: 'rocket', text: `${tag} downloaded · Restart to update`, action: 'install' };
     case 'installing':
       return { cls: 'busy', spin: true, text: 'Updating… restarting' };
+    case 'uptodate':
+      return { cls: 'done', icon: 'circle-check', text: "You're up to date!" };
     case 'error':
       return { cls: 'click', icon: 'triangle-alert', text: `${snap.error || 'Update failed'} · Retry`, action: 'check' };
     default: // idle

@@ -35,6 +35,7 @@ const state = {
   ready: false, // downloaded + staged — ready to restart & install
   installing: false, // a relaunch has been scheduled — block re-entry
   error: null as string | null, // last check/download failure, for the UI
+  upToDate: false, // a manual check just confirmed we're current (transient flash)
 };
 let onChange: (() => void) | null = null;
 
@@ -62,6 +63,15 @@ export function setUpdateState(patch: Partial<typeof state>): void {
   onChange?.();
 }
 
+// Flash a green "You're up to date!" in the popover after a manual check finds
+// nothing newer, then quietly fall back to the idle "Check for updates" row.
+let upToDateTimer: ReturnType<typeof setTimeout> | undefined;
+export function flashUpToDate(): void {
+  clearTimeout(upToDateTimer);
+  setUpdateState({ upToDate: true });
+  upToDateTimer = setTimeout(() => setUpdateState({ upToDate: false }), 4000);
+}
+
 // ── Renderer snapshot ─────────────────────────────────────────────────────────
 // The popover's update row is driven entirely by this single derived snapshot,
 // pushed on every state change (see main.ts wiring → 'update-state' IPC event).
@@ -72,6 +82,7 @@ export type UpdatePhase =
   | 'downloading' // fetching the installer — show a text progress bar
   | 'ready' // downloaded + staged — offer "Restart to update"
   | 'installing' // relaunch scheduled — "Updating…"
+  | 'uptodate' // manual check confirmed current — green flash, then back to idle
   | 'error'; // last check/download failed — offer to retry
 
 export interface UpdateSnapshot {
@@ -94,9 +105,11 @@ export function getUpdateSnapshot(): UpdateSnapshot {
           ? 'available'
           : state.checking
             ? 'checking'
-            : state.error
-              ? 'error'
-              : 'idle';
+            : state.upToDate
+              ? 'uptodate'
+              : state.error
+                ? 'error'
+                : 'idle';
   return {
     phase,
     version: state.available?.version ?? null,

@@ -11,6 +11,7 @@ import { app } from 'electron';
 import electronUpdater from 'electron-updater';
 import {
   cmpVersion,
+  flashUpToDate,
   getAvailableUpdate,
   isDownloading,
   isInstalling,
@@ -118,13 +119,14 @@ export async function checkForUpdatesWindows(opts: CheckOpts): Promise<UpdateInf
   // No update feed in dev — app-update.yml ships only inside the packaged app.
   if (!app.isPackaged) return null;
   ensureWired();
-  setUpdateState({ checking: true, error: null });
+  setUpdateState({ checking: true, error: null, upToDate: false });
   try {
     const result = await autoUpdater.checkForUpdates();
     const info = result?.updateInfo;
     if (!info || cmpVersion(String(info.version).replace(/^v/, ''), app.getVersion()) <= 0) {
       setUpdateState({ checking: false, available: null, ready: false });
       if (opts.notifyOnResult) {
+        flashUpToDate();
         notify("You're up to date", `Claude Quota Monitor v${app.getVersion()} is the latest version.`);
       }
       return null;

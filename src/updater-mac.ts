@@ -14,6 +14,7 @@ import { pipeline } from 'node:stream/promises';
 import { app, shell } from 'electron';
 import {
   cmpVersion,
+  flashUpToDate,
   getAvailableUpdate,
   isDownloading,
   isInstalling,
@@ -35,7 +36,7 @@ let stagedDmg: string | null = null;
 
 /** Poll the GitHub Releases API directly (see module header for why). */
 export async function checkForUpdatesMac(opts: CheckOpts): Promise<UpdateInfo | null> {
-  setUpdateState({ checking: true, error: null });
+  setUpdateState({ checking: true, error: null, upToDate: false });
   let json: {
     tag_name?: string;
     html_url?: string;
@@ -60,6 +61,7 @@ export async function checkForUpdatesMac(opts: CheckOpts): Promise<UpdateInfo | 
   if (!remote || cmpVersion(remote, current) <= 0) {
     setUpdateState({ checking: false, available: null, ready: false });
     if (opts.notifyOnResult) {
+      flashUpToDate();
       notify("You're up to date", `Claude Quota Monitor v${current} is the latest version.`);
     }
     return null;
