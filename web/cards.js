@@ -101,5 +101,5 @@ export function renderCards() {
 export function updateToolbar() {
   const busy = mainBusy();
   $('#check-btn').classList.toggle('is-busy', busy);
-  $('#check-btn-text').textContent = busy ? 'Checking…' : 'Check usage';
+  $('#check-btn-text').textContent = busy ? 'Checking…' : 'Usage';
 }

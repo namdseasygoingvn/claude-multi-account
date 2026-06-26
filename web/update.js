@@ -35,8 +35,8 @@ function view(snap) {
       return { cls: 'done', icon: 'circle-check', text: "You're up to date!" };
     case 'error':
       return { cls: 'click', icon: 'triangle-alert', text: `${snap.error || 'Update failed'} · Retry`, action: 'check' };
-    default: // idle
-      return { cls: 'click', icon: 'refresh-cw', text: 'Check for updates', action: 'check' };
+    default: // idle — a distinct icon from the "Usage" refresh so the two don't blur
+      return { cls: 'click', icon: 'cloud-download', text: 'Check for updates', action: 'check' };
   }
 }
 
