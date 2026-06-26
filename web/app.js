@@ -8,6 +8,7 @@ import { addAccount, openLogin, showModal } from './modal.js';
 import { lendAccount, closeLan, initReceive } from './lan.js';
 import { connectEvents } from './events.js';
 import { initReorder } from './reorder.js';
+import { fitWindow } from './window-fit.js';
 
 // Behavior half of the account-action registry (appearance is in
 // account-actions.js). Keys are the action ids; each gets the clicked label.
@@ -71,6 +72,18 @@ $('#auto-mins').addEventListener('change', () => {
 
 // Drag the grip handle on a card to reorder accounts; the new order is saved.
 initReorder(reorderAccounts);
+
+// Re-fit the popover to its content every time it becomes visible. The main
+// process pins the window to a height the renderer reports via win:resize, but
+// fitWindow() runs inside requestAnimationFrame, which Chromium pauses while the
+// window is hidden (background throttling). So a check that finishes while the
+// popover is closed (auto-refresh / tray check) shrinks the content but never
+// re-reports the height — leaving the panel padded with empty space on the next
+// open. visibilitychange fires when the window is shown again (rAF live), so
+// re-measuring here keeps the window flush with the idle content.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) fitWindow();
+});
 
 refreshIcons();
 connectEvents();
