@@ -38,6 +38,7 @@
     "appId": "vn.easygoing.claudequota",
     "productName": "Claude Quota Monitor",
     "npmRebuild": false,
+    "electronLanguages": ["en"],
     "directories": {
       "output": "dist-app"
     },
@@ -74,8 +75,7 @@
           "arch": ["x64"]
         }
       ],
-      "icon": "assets/icon.ico",
-      "compression": "store"
+      "icon": "assets/icon.ico"
     },
     "nsis": {
       "oneClick": true,
