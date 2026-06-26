@@ -110,12 +110,16 @@ export function registerIpc(ctx: AppContext, deps: IpcDeps): void {
     return switchVSCode(payload.label);
   });
 
-  ipcMain.handle('lan:lend-start', (_e, payload: { label: string }) => {
-    if (!getAccount(payload.label)) throw new Error(`unknown account "${payload.label}"`);
-    return deps.lan.lendStart(payload.label);
+  ipcMain.handle('lan:lend-start', (_e, payload: { labels?: string[] } = {}) => {
+    const labels = (Array.isArray(payload?.labels) ? payload.labels : []).filter((l) => typeof l === 'string');
+    if (labels.length === 0) throw new Error('no accounts to lend');
+    for (const l of labels) if (!getAccount(l)) throw new Error(`unknown account "${l}"`);
+    return deps.lan.lendStart(labels);
   });
 
   ipcMain.handle('lan:lend-stop', () => deps.lan.lendStop());
+
+  ipcMain.handle('lan:discover', () => deps.lan.discover());
 
   ipcMain.handle('lan:receive', (_e, payload: { host: string; port: number; pin: string }) => {
     const host = typeof payload?.host === 'string' ? payload.host.trim() : '';

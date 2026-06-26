@@ -5,7 +5,7 @@ import { state } from './state.js';
 import { renderCards } from './cards.js';
 import { loadAccounts, runCheck, deleteAccount, openCliFor, switchVSCodeFor, reorderAccounts } from './actions.js';
 import { addAccount, openLogin, showModal } from './modal.js';
-import { lendAccount, openReceive, submitReceive, closeLan } from './lan.js';
+import { lendAccount, shareAll, openReceive, closeLan, initReceive } from './lan.js';
 import { connectEvents } from './events.js';
 import { initReorder } from './reorder.js';
 
@@ -52,6 +52,7 @@ function applyAuto() {
 $('#check-btn').addEventListener('click', () => runCheck());
 $('#add-btn').addEventListener('click', addAccount);
 $('#receive-btn').addEventListener('click', openReceive);
+$('#share-all-btn').addEventListener('click', shareAll);
 
 $('#modal-close').addEventListener('click', () => {
   showModal(false);
@@ -60,10 +61,7 @@ $('#modal-close').addEventListener('click', () => {
 });
 
 $('#lan-close').addEventListener('click', closeLan);
-$('#lan-recv-go').addEventListener('click', submitReceive);
-$('#lan-recv-pin').addEventListener('input', (e) => {
-  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
-});
+initReceive(); // wires the receive sheet's scan / peer-pick / manual / submit
 
 $('#auto-toggle').addEventListener('change', applyAuto);
 $('#auto-mins').addEventListener('input', (e) => {

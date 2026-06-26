@@ -1,7 +1,6 @@
 import http from 'node:http';
 
-import { applyAccount, PROOF_MARKER, type AccountTransfer } from './lan-transfer.js';
-import type { AccountConfig } from './types.js';
+import { applyAccounts, PROOF_MARKER, type AccountTransfer, type ApplyResult } from './lan-transfer.js';
 import * as lc from './lan-crypto.js';
 
 // The receiver side: dial a lending PC, prove knowledge of the PIN, pull the
@@ -55,8 +54,8 @@ function httpError(code: unknown): Error {
   return new Error(typeof code === 'string' && code ? code : 'transfer failed');
 }
 
-/** Pull + decrypt the transfer from a lender (does not touch local accounts). */
-export async function fetchAccount(host: string, port: number, pin: string): Promise<AccountTransfer> {
+/** Pull + decrypt the bundle from a lender (does not touch local accounts). */
+export async function fetchAccounts(host: string, port: number, pin: string): Promise<AccountTransfer[]> {
   if (!lc.isValidPin(pin)) throw new Error('PIN must be 4 digits');
   const info = await httpJson(host, port, 'GET', '/info');
   if (typeof info?.aPub !== 'string' || typeof info?.salt !== 'string') {
@@ -67,19 +66,16 @@ export async function fetchAccount(host: string, port: number, pin: string): Pro
   const proof = lc.seal(key, { marker: PROOF_MARKER, ts: Date.now() });
   const res = await httpJson(host, port, 'POST', '/claim', { bPub: kp.publicKey, proof });
   if (!res?.payload) throw new Error('transfer failed');
+  let bundle: AccountTransfer[];
   try {
-    return lc.open<AccountTransfer>(key, res.payload);
+    bundle = lc.open<AccountTransfer[]>(key, res.payload);
   } catch {
     throw new Error('could not decrypt the transfer (PIN mismatch)');
   }
+  return Array.isArray(bundle) ? bundle : [bundle];
 }
 
-/** Pull a transfer and register it locally. Returns the new account. */
-export async function receiveAccount(
-  host: string,
-  port: number,
-  pin: string,
-  label?: string,
-): Promise<AccountConfig> {
-  return applyAccount(await fetchAccount(host, port, pin), label);
+/** Pull a bundle and register its accounts locally (skipping ones already here). */
+export async function receiveAccounts(host: string, port: number, pin: string): Promise<ApplyResult> {
+  return applyAccounts(await fetchAccounts(host, port, pin));
 }

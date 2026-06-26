@@ -16,6 +16,7 @@ const INVOKE = new Set([
   'win:resize',
   'lan:lend-start',
   'lan:lend-stop',
+  'lan:discover',
   'lan:receive',
 ]);
 

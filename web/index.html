@@ -221,6 +221,19 @@
     .lan-input:focus { outline: 1.5px solid var(--accent); outline-offset: -1px; border-color: transparent; }
     .lan-go { width: 100%; margin-top: 2px; padding: 7px; border: none; border-radius: 6px; background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 600; cursor: default; }
     .lan-go:hover { filter: brightness(1.06); }
+    .lan-peers { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+    .lan-peer { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 7px 9px; border: 1px solid var(--sep); border-radius: 6px; background: var(--field); color: var(--label); text-align: left; cursor: default; }
+    .lan-peer:hover { border-color: var(--accent); }
+    .lan-peer.sel { border-color: var(--accent); outline: 1.5px solid var(--accent); outline-offset: -2px; }
+    .lan-peer-name { font-size: 13px; font-weight: 600; }
+    .lan-peer-meta { font-size: 11px; color: var(--label-2); }
+    .lan-scanning { display: flex; align-items: center; gap: 7px; padding: 6px 2px; font-size: 12px; color: var(--label-2); }
+    .lan-none { padding: 6px 2px; font-size: 12px; color: var(--label-2); line-height: 1.4; }
+    .lan-recv-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .lan-mini { padding: 4px 9px; border: 1px solid var(--sep); border-radius: 6px; background: var(--field); color: var(--label); font-size: 12px; cursor: default; }
+    .lan-mini:hover { border-color: var(--accent); }
+    .lan-link { padding: 0; border: none; background: none; color: var(--accent); font-size: 12px; cursor: default; }
+    .lan-link:hover { text-decoration: underline; }
 
     .hidden { display: none !important; }
 
@@ -244,6 +257,9 @@
     </div>
     <div class="mitem" id="add-btn">
       <i data-lucide="user-plus"></i>Add account…
+    </div>
+    <div class="mitem" id="share-all-btn">
+      <i data-lucide="share-2"></i>Share all accounts…
     </div>
     <div class="mitem" id="receive-btn">
       <i data-lucide="download"></i>Receive account…
@@ -301,15 +317,20 @@
       <div id="lan-lend" class="hidden">
         <p id="lan-lend-sub" class="sub"></p>
         <div class="lan-pin" id="lan-pin">····</div>
-        <p class="note" style="text-align:center;margin-top:0">On the other PC: “Receive account…”, then enter the address below and this PIN.</p>
+        <p class="note" style="text-align:center;margin-top:0">On the other PC: “Receive account…”, pick this PC from the list, then type this PIN. (No list? Enter the address below.)</p>
         <div class="lan-addr" id="lan-addr">starting…</div>
         <div class="prog"><span class="spin"></span><span id="lan-lend-status">starting…</span></div>
         <p class="note">Keep this open until the transfer finishes. The PIN works once and the window closes after 2 minutes.</p>
       </div>
 
       <div id="lan-recv" class="hidden">
-        <p class="sub">Enter the address and PIN shown on the lending PC.</p>
-        <input id="lan-recv-addr" class="lan-input" type="text" placeholder="192.168.1.42:50912" autocapitalize="off" autocomplete="off" spellcheck="false">
+        <p class="sub">Pick the PC that’s lending, then enter its PIN.</p>
+        <div id="lan-peers" class="lan-peers"></div>
+        <div class="lan-recv-row">
+          <button id="lan-rescan" class="lan-mini">Rescan</button>
+          <button id="lan-manual-toggle" class="lan-link">Enter address manually</button>
+        </div>
+        <input id="lan-recv-addr" class="lan-input hidden" type="text" placeholder="192.168.1.42:50912" autocapitalize="off" autocomplete="off" spellcheck="false">
         <input id="lan-recv-pin" class="lan-input" type="text" inputmode="numeric" maxlength="4" placeholder="PIN (4 digits)">
         <button id="lan-recv-go" class="lan-go">Receive</button>
         <p id="lan-recv-status" class="note"></p>

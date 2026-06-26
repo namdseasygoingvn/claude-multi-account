@@ -30,7 +30,8 @@ export interface LendSession {
 }
 
 export interface LendOptions {
-  transfer: AccountTransfer;
+  /** One or more accounts to hand over in a single session. */
+  transfers: AccountTransfer[];
   /** Fired once when the session ends on its own (sent, locked out, or timed out). */
   onOutcome(outcome: LendOutcome, message: string): void;
   timeoutMs?: number;
@@ -131,8 +132,9 @@ export function startLendServer(opts: LendOptions): Promise<LendSession> {
         return;
       }
 
-      sendJson(res, 200, { payload: lc.seal(key, opts.transfer) });
-      end('done', 'account sent');
+      sendJson(res, 200, { payload: lc.seal(key, opts.transfers) });
+      const n = opts.transfers.length;
+      end('done', n === 1 ? 'account sent' : `${n} accounts sent`);
       return;
     }
 

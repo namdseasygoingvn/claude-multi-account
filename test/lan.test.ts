@@ -4,14 +4,16 @@ import assert from 'node:assert/strict';
 import * as lc from '../src/lan-crypto.js';
 import type { AccountTransfer } from '../src/lan-transfer.js';
 import { startLendServer } from '../src/lan-server.js';
-import { fetchAccount } from '../src/lan-client.js';
+import { fetchAccounts } from '../src/lan-client.js';
 
-const TRANSFER: AccountTransfer = {
+const mkTransfer = (email: string): AccountTransfer => ({
   v: 1,
-  email: 'test@example.com',
-  token: JSON.stringify({ claudeAiOauth: { accessToken: 'secret-token-xyz' } }),
-  oauthAccount: { emailAddress: 'test@example.com' },
-};
+  email,
+  token: JSON.stringify({ claudeAiOauth: { accessToken: `token-${email}` } }),
+  oauthAccount: { emailAddress: email },
+});
+
+const TRANSFERS = [mkTransfer('a@example.com'), mkTransfer('b@example.com')];
 
 // ── crypto primitives ─────────────────────────────────────────────────────────
 
@@ -46,17 +48,17 @@ test('isValidPin only accepts 4 digits', () => {
 
 // ── server ↔ client transfer ──────────────────────────────────────────────────
 
-test('a correct PIN transfers the account; the server then closes "done"', async () => {
+test('a correct PIN transfers the whole bundle; the server then closes "done"', async () => {
   let outcome: string | null = null;
   const session = await startLendServer({
-    transfer: TRANSFER,
+    transfers: TRANSFERS,
     onOutcome: (o) => {
       outcome = o;
     },
   });
   try {
-    const got = await fetchAccount('127.0.0.1', session.port, session.pin);
-    assert.deepEqual(got, TRANSFER);
+    const got = await fetchAccounts('127.0.0.1', session.port, session.pin);
+    assert.deepEqual(got, TRANSFERS);
     assert.equal(outcome, 'done');
   } finally {
     session.stop();
@@ -66,7 +68,7 @@ test('a correct PIN transfers the account; the server then closes "done"', async
 test('a wrong PIN is rejected, and the third wrong try locks the window', async () => {
   let outcome: string | null = null;
   const session = await startLendServer({
-    transfer: TRANSFER,
+    transfers: TRANSFERS,
     maxAttempts: 3,
     onOutcome: (o) => {
       outcome = o;
@@ -74,13 +76,13 @@ test('a wrong PIN is rejected, and the third wrong try locks the window', async 
   });
   const wrong = session.pin === '0000' ? '1111' : '0000';
   try {
-    await assert.rejects(() => fetchAccount('127.0.0.1', session.port, wrong), /wrong PIN/);
-    await assert.rejects(() => fetchAccount('127.0.0.1', session.port, wrong), /wrong PIN/);
+    await assert.rejects(() => fetchAccounts('127.0.0.1', session.port, wrong), /wrong PIN/);
+    await assert.rejects(() => fetchAccounts('127.0.0.1', session.port, wrong), /wrong PIN/);
     // third strike → server reports "locked"
-    await assert.rejects(() => fetchAccount('127.0.0.1', session.port, wrong), /too many/);
+    await assert.rejects(() => fetchAccounts('127.0.0.1', session.port, wrong), /too many/);
     assert.equal(outcome, 'failed');
     // window is closed now — a later attempt (even the right PIN) can't connect
-    await assert.rejects(() => fetchAccount('127.0.0.1', session.port, session.pin));
+    await assert.rejects(() => fetchAccounts('127.0.0.1', session.port, session.pin));
   } finally {
     session.stop();
   }

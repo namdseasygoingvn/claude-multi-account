@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { addAccount, getAccount, probeLogin, removeAccount } from './registry.js';
+import { addAccount, getAccount, loadRegistry, probeLogin, removeAccount } from './registry.js';
 import { readSecret, serviceForConfigDir, writeSecret } from './keychain.js';
 import type { AccountConfig } from './types.js';
 
@@ -86,4 +86,33 @@ export function applyAccount(transfer: AccountTransfer, label?: string): Account
   }
   seedClaudeState(acc.configDir, transfer.oauthAccount);
   return acc;
+}
+
+/** Outcome of applying a bundle: labels newly added + emails already present. */
+export interface ApplyResult {
+  added: string[];
+  skipped: string[];
+}
+
+/**
+ * Apply a bundle of transfers, skipping any whose email is already registered
+ * here (so re-sharing to the same PC doesn't pile up duplicate cards). Returns
+ * which labels were added and which emails were skipped.
+ */
+export function applyAccounts(transfers: AccountTransfer[]): ApplyResult {
+  const seen = new Set(
+    loadRegistry()
+      .map((a) => probeLogin(a).email)
+      .filter((e): e is string => !!e),
+  );
+  const result: ApplyResult = { added: [], skipped: [] };
+  for (const t of transfers) {
+    if (t.email && seen.has(t.email)) {
+      result.skipped.push(t.email);
+      continue;
+    }
+    result.added.push(applyAccount(t).label);
+    if (t.email) seen.add(t.email);
+  }
+  return result;
 }
