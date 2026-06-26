@@ -1,7 +1,7 @@
 // [Open as new CLI] — open a new terminal/console window with CLAUDE_CONFIG_DIR
 // pinned to one account, so any `claude` run in it uses that account, fully
 // independent of the shared slot (this never touches the keychain or the slot).
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -93,9 +93,19 @@ function openCliWindows(label: string, dir: string, email: string): void {
   // `start "" cmd /k "<script>"` opens a new window, runs the banner, and leaves
   // the shell interactive with the env above. windowsVerbatimArguments so cmd
   // sees the line exactly (start's empty title arg + the quoted script path).
-  const r = spawnSync('cmd.exe', ['/c', `start "" cmd /k "${file}"`], {
+  //
+  // MUST be a detached, stdio:'ignore' async spawn — NOT spawnSync. The new
+  // console is interactive (`cmd /k`) and inherits whatever stdio it's given, so
+  // a piped/inherited spawnSync would block the Electron main process until the
+  // user closes the terminal (the app freezes, then Electron kills it as hung).
+  // Detached + ignored stdio + unref lets the window outlive us with no handles
+  // held, so this returns immediately.
+  const child = spawn('cmd.exe', ['/c', `start "" cmd /k "${file}"`], {
     env,
     windowsVerbatimArguments: true,
+    detached: true,
+    stdio: 'ignore',
   });
-  if (r.status !== 0) throw new Error('failed to open a console window');
+  child.on('error', () => {}); // fire-and-forget: a spawn failure must not crash main
+  child.unref();
 }

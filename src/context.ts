@@ -15,6 +15,8 @@ export interface AppContext {
   logins: LoginManager;
   /** Latest usage result per label — drives the menu-bar badge. */
   readonly lastResults: Map<string, UsageResult>;
+  /** Signed-in email per label, resolved during the usage check — the tray tooltip shows this, not the internal label. */
+  readonly emailByLabel: Map<string, string | null>;
   /** Labels with an in-flight usage check (mirrors the old server-side guard). */
   readonly checking: Set<string>;
   /** Push an IPC event to the renderer (no-op if the popover is gone). */
@@ -35,6 +37,7 @@ export function createContext(makeLogins: (ctx: AppContext) => LoginManager): Ap
     // Filled in immediately below; declared here so the literal satisfies AppContext.
     logins: undefined as unknown as LoginManager,
     lastResults: new Map<string, UsageResult>(),
+    emailByLabel: new Map<string, string | null>(),
     checking: new Set<string>(),
 
     send(channel, payload) {
@@ -54,16 +57,18 @@ export function createContext(makeLogins: (ctx: AppContext) => LoginManager): Ap
       // Title text beside the icon is macOS-only; on Windows/Linux the worst-%
       // readout lives in the tooltip below instead.
       if (process.platform === 'darwin') tray.setTitle(worst == null ? '' : ` ${worst}%`);
+      // One account per line (email, not the internal label), newline-separated.
       const lines = [...ctx.lastResults.values()]
         .map((r) => {
           const top = r.parsed?.sections?.reduce<number | null>(
             (m, s) => (s.pct != null && (m == null || s.pct > m) ? s.pct : m),
             null,
           );
-          return `${r.label}: ${top == null ? '—' : top + '%'}`;
+          const who = ctx.emailByLabel.get(r.label) || r.label;
+          return `${who}: ${top == null ? '—' : top + '%'}`;
         })
-        .join(' · ');
-      tray.setToolTip(lines ? `Claude Quota — ${lines}` : 'Claude Quota Monitor');
+        .join('\n');
+      tray.setToolTip(lines || 'Claude Quota Monitor');
     },
   };
 

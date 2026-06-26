@@ -31,23 +31,33 @@ export interface WindowController {
 }
 
 export function createWindowController(ctx: AppContext): WindowController {
+  // The popover's intended height, owned here and NEVER read back from the OS —
+  // same reason the width is a constant (see POPOVER_WIDTH). On Windows with
+  // fractional display scaling, reading the current bounds back rounds down a
+  // fraction, so re-applying what we read shrinks the window a hair on every
+  // move. position() runs on each open, so that drift accumulated until a quota
+  // check happened to call resize() and re-pin the size. We pin BOTH dimensions
+  // to these intended values on every move instead, so neither can ratchet.
+  let popoverHeight = 360; // initial; resize() updates it as content changes
+
   function position(): void {
     if (!ctx.win || !ctx.tray) return;
     const tb = ctx.tray.getBounds();
-    const wb = ctx.win.getBounds();
     const area = screen.getDisplayNearestPoint({ x: tb.x, y: tb.y }).workArea;
     // Horizontal: center on the icon, clamped into the work area.
-    let x = Math.round(tb.x + tb.width / 2 - wb.width / 2);
-    x = Math.max(area.x + 4, Math.min(x, area.x + area.width - wb.width - 4));
+    let x = Math.round(tb.x + tb.width / 2 - POPOVER_WIDTH / 2);
+    x = Math.max(area.x + 4, Math.min(x, area.x + area.width - POPOVER_WIDTH - 4));
     // Vertical: drop BELOW a top tray (the macOS menu bar) or rise ABOVE a
     // bottom tray (the Windows taskbar) — decided by which half of the display
     // the icon sits in. The clamp then guarantees it stays fully on-screen
     // (without it, a bottom tray would push the popover off the bottom edge —
     // the "nothing happens when I click the icon" bug on Windows).
     const trayAtTop = tb.y + tb.height / 2 < area.y + area.height / 2;
-    let y = trayAtTop ? tb.y + tb.height + 4 : tb.y - wb.height - 4;
-    y = Math.max(area.y + 4, Math.min(y, area.y + area.height - wb.height - 4));
-    ctx.win.setPosition(x, y, false);
+    let y = trayAtTop ? tb.y + tb.height + 4 : tb.y - popoverHeight - 4;
+    y = Math.max(area.y + 4, Math.min(y, area.y + area.height - popoverHeight - 4));
+    // setBounds (not setPosition) with the pinned width + intended height: this
+    // re-asserts the exact size on every move, so a move can't shrink it.
+    ctx.win.setBounds({ x, y, width: POPOVER_WIDTH, height: popoverHeight }, false);
   }
 
   function show(): void {
@@ -68,13 +78,13 @@ export function createWindowController(ctx: AppContext): WindowController {
     const desired = Math.round(height);
     if (!Number.isFinite(desired) || desired < 80) return;
     // Width is always the design width (never read back — see POPOVER_WIDTH); only
-    // the height tracks content. Cap the height to the work area, then let
-    // position() place it on-screen. Doing both keeps the popover flush with the
-    // tray on either platform: re-anchoring is a no-op on macOS (the menu-bar tray
-    // doesn't move) and keeps the bottom edge pinned above the taskbar on Windows
-    // as the content height changes.
+    // the height tracks content. Cap the height to the work area, record it as the
+    // intended height, then let position() apply the size + on-screen placement.
+    // Doing both keeps the popover flush with the tray on either platform:
+    // re-anchoring is a no-op on macOS (the menu-bar tray doesn't move) and keeps
+    // the bottom edge pinned above the taskbar on Windows as content height changes.
     const area = screen.getDisplayNearestPoint(ctx.win.getBounds()).workArea;
-    ctx.win.setSize(POPOVER_WIDTH, Math.min(desired, area.height - 8), false);
+    popoverHeight = Math.min(desired, area.height - 8);
     position();
   }
 

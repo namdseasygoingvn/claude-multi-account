@@ -151,6 +151,7 @@ export async function runUsageCheck(ctx: AppContext, labels?: string[]): Promise
   const groups = new Map<string, AccountConfig[]>();
   for (const acc of targets) {
     const email = probeLogin(acc).email;
+    ctx.emailByLabel.set(acc.label, email); // tray tooltip shows the email, not the label
     const key = email ?? `nogroup:${acc.label}`; // logged-out accounts never merge
     const group = groups.get(key);
     if (group) group.push(acc);
