@@ -5,7 +5,7 @@ import { state } from './state.js';
 import { renderCards } from './cards.js';
 import { loadAccounts, runCheck, deleteAccount, openCliFor, switchVSCodeFor, reorderAccounts } from './actions.js';
 import { addAccount, openLogin, showModal } from './modal.js';
-import { lendAccount, shareAll, openReceive, closeLan, initReceive } from './lan.js';
+import { lendAccount, closeLan, initReceive } from './lan.js';
 import { connectEvents } from './events.js';
 import { initReorder } from './reorder.js';
 
@@ -51,8 +51,6 @@ function applyAuto() {
 
 $('#check-btn').addEventListener('click', () => runCheck());
 $('#add-btn').addEventListener('click', addAccount);
-$('#receive-btn').addEventListener('click', openReceive);
-$('#share-all-btn').addEventListener('click', shareAll);
 
 $('#modal-close').addEventListener('click', () => {
   showModal(false);

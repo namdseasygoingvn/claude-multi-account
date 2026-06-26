@@ -48,6 +48,14 @@ const trayCtl = createTray(ctx, {
   addAccount: () => void repair.addAccountFlow(),
   repairClaude: () => void repair.repairClaudeMenu(),
   toggleWindow: () => windowCtl.toggle(),
+  shareAllAccounts: () => {
+    windowCtl.show();
+    ctx.send('lan-share-all', {});
+  },
+  receiveAccount: () => {
+    windowCtl.show();
+    ctx.send('lan-receive', {});
+  },
 });
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────

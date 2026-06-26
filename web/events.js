@@ -3,7 +3,7 @@ import { on } from './api.js';
 import { renderCards, updateToolbar } from './cards.js';
 import { loadAccounts } from './actions.js';
 import { openLogin, setModalStatus, renderModalUrls, loginSucceeded } from './modal.js';
-import { onLendStatus } from './lan.js';
+import { onLendStatus, shareAll, openReceive } from './lan.js';
 
 const EVENT_CHANNELS = [
   'login-status',
@@ -16,6 +16,8 @@ const EVENT_CHANNELS = [
   'check-done',
   'account-added',
   'lan-lend-status',
+  'lan-share-all',
+  'lan-receive',
 ];
 
 // Subscribe to each push channel; reconstruct the old `{ type, ...payload }`
@@ -82,6 +84,14 @@ function handleWs(m) {
       break;
     case 'lan-lend-status':
       onLendStatus(m);
+      break;
+    case 'lan-share-all':
+      // Tray "LAN ▸ Share all accounts…" — open the lend sheet for every account.
+      shareAll();
+      break;
+    case 'lan-receive':
+      // Tray "LAN ▸ Receive account…" — open the receive sheet.
+      openReceive();
       break;
   }
 }

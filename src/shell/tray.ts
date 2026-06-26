@@ -13,6 +13,10 @@ export interface TrayDeps {
   repairClaude(): void;
   /** Tray-icon click: show the popover if hidden, hide it if visible. */
   toggleWindow(): void;
+  /** "LAN ▸ Share all accounts…" — show the popover and start the share-all flow. */
+  shareAllAccounts(): void;
+  /** "LAN ▸ Receive account…" — show the popover and open the receive flow. */
+  receiveAccount(): void;
 }
 
 export interface TrayController {
@@ -50,6 +54,13 @@ export function createTray(ctx: AppContext, deps: TrayDeps): TrayController {
       { label: `Claude Quota Monitor v${app.getVersion()}`, enabled: false },
       { type: 'separator' },
       { label: 'Add account…', click: () => deps.addAccount() },
+      {
+        label: 'LAN',
+        submenu: [
+          { label: 'Share all accounts…', click: () => deps.shareAllAccounts() },
+          { label: 'Receive account…', click: () => deps.receiveAccount() },
+        ],
+      },
       {
         label: 'Open at login',
         type: 'checkbox',

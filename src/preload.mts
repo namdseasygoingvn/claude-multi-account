@@ -33,6 +33,8 @@ const EVENTS = new Set([
   'check-done',
   'account-added',
   'lan-lend-status',
+  'lan-share-all',
+  'lan-receive',
 ]);
 
 contextBridge.exposeInMainWorld('api', {
