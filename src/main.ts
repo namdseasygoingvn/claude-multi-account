@@ -4,7 +4,7 @@ import { setupEnvironment } from './bootstrap.js';
 import { setDataRoot } from './paths.js';
 import { LoginManager } from './logins.js';
 import { checkForUpdates, getUpdateSnapshot, onUpdateStateChange } from './updater.js';
-import { attachRendererLog } from './log-buffer.js';
+import { appendLog, attachRendererLog } from './log-buffer.js';
 import { createContext } from './context.js';
 import { runUsageCheck as runUsageCheckImpl } from './usage-orchestrator.js';
 import { createWindowController } from './shell/window.js';
@@ -12,6 +12,26 @@ import { createTray } from './shell/tray.js';
 import { createRepair } from './shell/repair.js';
 import { createLan } from './shell/lan.js';
 import { registerIpc } from './shell/ipc.js';
+
+// Safety net FIRST: this app drives `claude` over PTYs, and node-pty's Windows
+// backend (ConPTY) can throw ASYNCHRONOUSLY — after spawn returns — when a pipe
+// breaks (the claude.cmd shim exiting oddly, a closed handle, an EPIPE on write).
+// Such a throw doesn't surface at the try/catch around the spawn/write/kill call;
+// it bubbles up as an uncaught exception. Without this guard it kills the main
+// process, and the popover BrowserWindow dies with it — the recurring "panel
+// dies when an account fails to load" bug, which only ever reproduced on Windows
+// because macOS's forkpty doesn't hit this path. A monitor must stay resident
+// through any single account's failure, so we log and swallow instead of exiting.
+// Mirror into the tray debug log buffer too, so a main-process crash that would
+// have blanked the window is visible there without a DevTools session.
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+  appendLog('main:uncaught', err instanceof Error ? (err.stack ?? err.message) : String(err));
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+  appendLog('main:unhandled', reason instanceof Error ? (reason.stack ?? reason.message) : String(reason));
+});
 
 // Restore the login-shell PATH and pin CLAUDE_BIN before anything spawns `claude`.
 setupEnvironment();

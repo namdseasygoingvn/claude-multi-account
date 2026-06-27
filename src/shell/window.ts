@@ -144,6 +144,20 @@ export function createWindowController(ctx: AppContext): WindowController {
       }
     });
 
+    // Renderer recovery: if the web process is killed/crashes or the page fails
+    // to load, the popover would otherwise stay a dead blank panel until restart.
+    // Reload it so it self-heals. (Guard against a reload loop on a hard failure
+    // by only reloading when the window still exists and isn't already gone.)
+    win.webContents.on('render-process-gone', () => {
+      if (!win.isDestroyed()) win.reload();
+    });
+    win.webContents.on('did-fail-load', (_e, errorCode, _desc, _url, isMainFrame) => {
+      // -3 is ERR_ABORTED (a deliberate navigation cancel), not a real failure.
+      if (isMainFrame && errorCode !== -3 && !win.isDestroyed()) {
+        void win.loadFile(path.join(REPO_ROOT, 'web', 'index.html'));
+      }
+    });
+
     // Popover dismiss: hide when focus leaves (unless devtools is open).
     win.on('blur', () => {
       if (!win.webContents.isDevToolsOpened()) win.hide();
