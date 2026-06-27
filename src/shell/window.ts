@@ -88,7 +88,13 @@ export function createWindowController(ctx: AppContext): WindowController {
     // re-anchoring is a no-op on macOS (the menu-bar tray doesn't move) and keeps
     // the bottom edge pinned above the taskbar on Windows as content height changes.
     const area = screen.getDisplayNearestPoint(ctx.win.getBounds()).workArea;
-    popoverHeight = Math.min(desired, area.height - 8);
+    const next = Math.min(desired, area.height - 8);
+    // Defense-in-depth against the resize storm (the renderer coalesces too):
+    // if the height hasn't changed, skip setBounds entirely. Rapidly calling
+    // setBounds on the frameless macOS vibrancy window crashed the renderer, and
+    // a re-render that recomputes the same height must not re-assert it.
+    if (next === popoverHeight) return;
+    popoverHeight = next;
     position();
   }
 
@@ -179,7 +185,7 @@ export function createWindowController(ctx: AppContext): WindowController {
     };
     win.webContents.on('render-process-gone', (_e, details) => {
       if (details.reason === 'clean-exit' || details.reason === 'killed') return;
-      selfHeal(`render-process-gone:${details.reason}`);
+      selfHeal(`render-process-gone:${details.reason} exit=${details.exitCode}`);
     });
     win.webContents.on('did-fail-load', (_e, errorCode, desc, _url, isMainFrame) => {
       // -3 is ERR_ABORTED (a deliberate navigation cancel), not a real failure.

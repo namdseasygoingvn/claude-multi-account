@@ -4,10 +4,23 @@ import { invoke } from './api.js';
 // Show at most this many accounts before the list starts to scroll.
 export const MAX_VISIBLE_ACCOUNTS = 5;
 
+// Coalesce a burst of fitWindow() calls into a single resize. A usage check
+// fires many usage-status/usage-result events, each of which re-renders the
+// cards and calls fitWindow(); left uncoalesced that became dozens of identical
+// win:resize calls per second, and the resulting setBounds storm on the
+// frameless macOS *vibrancy* window crashed the renderer/compositor (the
+// recurring "render-process-gone:crashed"). We cancel any pending frame so only
+// the last call in a burst runs, and skip the IPC entirely when the computed
+// height hasn't changed — so a steady-state re-render costs zero resizes.
+let pendingFrame = 0;
+let lastSent = -1;
+
 // Size the popover to its content so it isn't empty with one account, capped at
 // MAX_VISIBLE_ACCOUNTS so a long list scrolls instead of filling the screen.
 export function fitWindow() {
-  requestAnimationFrame(() => {
+  if (pendingFrame) cancelAnimationFrame(pendingFrame);
+  pendingFrame = requestAnimationFrame(() => {
+    pendingFrame = 0;
     const content = document.querySelector('.content');
     const cards = $('#cards');
     if (!content || !cards) return;
@@ -38,7 +51,10 @@ export function fitWindow() {
       const sheet = modal.querySelector('.sheet');
       if (sheet) target = Math.max(target, Math.ceil(sheet.offsetHeight + 28));
     }
-    console.log('[cqm] fitWindow target:', target, 'chrome:', Math.round(chrome), 'cardsH:', contentH);
+    // Unchanged height → don't touch the window. This is what stops the resize
+    // storm: re-renders during a check recompute the same target repeatedly.
+    if (target === lastSent) return;
+    lastSent = target;
     invoke('win:resize', { height: target }).catch(() => {});
   });
 }
