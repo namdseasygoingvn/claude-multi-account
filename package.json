@@ -38,7 +38,6 @@
     "appId": "vn.easygoing.claudequota",
     "productName": "Claude Quota Monitor",
     "npmRebuild": false,
-    "electronLanguages": ["en"],
     "directories": {
       "output": "dist-app"
     },

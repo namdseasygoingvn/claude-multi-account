@@ -33,17 +33,18 @@ process.on('unhandledRejection', (reason) => {
   appendLog('main:unhandled', reason instanceof Error ? (reason.stack ?? reason.message) : String(reason));
 });
 
-// Windows: force CPU (SwiftShader) compositing. The popover renderer kept dying
-// with `render-process-gone:crashed exit=-36861` a few seconds into every load —
-// a *native* crash (it never reached the JS window.onerror handler), Windows-only
-// (macOS was fine), and deterministic while the check's spinner animation + SVG
-// icons were actively compositing. That signature is a GPU-process death (driver
-// TDR / device-removed) taking the renderer with it; it's independent of the
-// content, which is why the resize-storm fix and a fresh install didn't touch it.
-// This tiny popover doesn't need the GPU, so software compositing is a clean
-// trade. macOS keeps hardware accel — its vibrancy backing relies on it and never
-// crashed. MUST be called before app is ready.
-if (process.platform === 'win32') app.disableHardwareAcceleration();
+// Pin the Chromium UI locale to en-US, which we always ship. The popover
+// renderer crashed (render-process-gone, exit=-36861) within seconds of every
+// load on a non-English Windows: the build trims the locale .pak files, so on a
+// `vi`/etc. system Chromium found no matching pak, logged "locale resources are
+// not loaded", and the renderer died the moment it touched a localized resource.
+// macOS never hit it (different locale bundling). Forcing the locale means the
+// renderer only ever requests en-US.pak — which is shipped — regardless of the
+// OS language; the build also ships the full pak set now (see package.json) as a
+// belt-and-suspenders so the system locale's pak is present too. The app's own UI
+// is English HTML, so this changes only Chromium's built-in chrome. MUST run
+// before app is ready.
+app.commandLine.appendSwitch('lang', 'en-US');
 
 // Restore the login-shell PATH and pin CLAUDE_BIN before anything spawns `claude`.
 setupEnvironment();
