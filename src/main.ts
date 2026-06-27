@@ -33,9 +33,28 @@ process.on('unhandledRejection', (reason) => {
   appendLog('main:unhandled', reason instanceof Error ? (reason.stack ?? reason.message) : String(reason));
 });
 
+// Windows: force CPU (SwiftShader) compositing. The popover renderer kept dying
+// with `render-process-gone:crashed exit=-36861` a few seconds into every load —
+// a *native* crash (it never reached the JS window.onerror handler), Windows-only
+// (macOS was fine), and deterministic while the check's spinner animation + SVG
+// icons were actively compositing. That signature is a GPU-process death (driver
+// TDR / device-removed) taking the renderer with it; it's independent of the
+// content, which is why the resize-storm fix and a fresh install didn't touch it.
+// This tiny popover doesn't need the GPU, so software compositing is a clean
+// trade. macOS keeps hardware accel — its vibrancy backing relies on it and never
+// crashed. MUST be called before app is ready.
+if (process.platform === 'win32') app.disableHardwareAcceleration();
+
 // Restore the login-shell PATH and pin CLAUDE_BIN before anything spawns `claude`.
 setupEnvironment();
 patchMainConsole(); // capture console.log/warn/error into the debug ring buffer
+
+// Diagnostic: if the GPU process itself dies, log it (the renderer's own death is
+// already logged in window.ts). Confirms the crash class above and stays useful
+// even with hardware accel off, since other child processes report here too.
+app.on('child-process-gone', (_e, details) => {
+  appendLog('main:child-gone', `${details.type} ${details.reason} exit=${details.exitCode}`);
+});
 
 // Single instance: a second launch just surfaces the running popover.
 if (!app.requestSingleInstanceLock()) {
