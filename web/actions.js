@@ -64,9 +64,6 @@ export async function reorderAccounts(orderedLabels) {
 }
 
 export async function deleteAccount(label) {
-  const acc = state.accounts.find((a) => a.label === label);
-  const name = (acc && acc.email) || label;
-  if (!confirm(`Delete account "${name}"?\nThis removes it from the monitor and deletes its local session.`)) return;
   try {
     await invoke('accounts:remove', { label });
     state.results.delete(label);

@@ -1,6 +1,6 @@
 import { Notification, dialog } from 'electron';
 
-import { addAccount } from '../registry.js';
+import { addAccount, loadRegistry, removeAccount } from '../registry.js';
 import { probeClaudeHealth, repairClaude, type ClaudeHealth } from '../claude-health.js';
 import type { AppContext } from '../context.js';
 
@@ -19,6 +19,8 @@ export interface RepairController {
   repairClaudeMenu(): Promise<void>;
   /** Tray "Add account…" — register, start sign-in, surface the login view. */
   addAccountFlow(): Promise<void>;
+  /** Tray "Delete all accounts…" — confirm, then remove every account. */
+  deleteAllAccountsFlow(): Promise<void>;
   /** Launch-time probe: flag a broken/missing claude binary via notification. */
   startupHealthCheck(): void;
 }
@@ -124,6 +126,29 @@ export function createRepair(ctx: AppContext, deps: RepairDeps): RepairControlle
     }
   }
 
+  async function deleteAllAccountsFlow(): Promise<void> {
+    const accounts = loadRegistry();
+    if (accounts.length === 0) return;
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      message: `Delete all ${accounts.length} accounts?`,
+      detail:
+        'This removes every account from the monitor and deletes its local session. This cannot be undone.',
+      buttons: ['Delete all', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+    });
+    if (response !== 0) return;
+    for (const acc of accounts) {
+      ctx.logins.stop(acc.label);
+      removeAccount(acc.label);
+      ctx.lastResults.delete(acc.label);
+    }
+    ctx.updateBadge();
+    ctx.send('accounts-changed', {}); // renderer reloads its list
+    deps.showWindow();
+  }
+
   function startupHealthCheck(): void {
     // Proactively flag a broken/missing claude binary (the app is useless without
     // it). A click on the notification opens the one-click repair.
@@ -135,5 +160,12 @@ export function createRepair(ctx: AppContext, deps: RepairDeps): RepairControlle
     });
   }
 
-  return { ensureClaudeHealthy, tryStartLogin, repairClaudeMenu, addAccountFlow, startupHealthCheck };
+  return {
+    ensureClaudeHealthy,
+    tryStartLogin,
+    repairClaudeMenu,
+    addAccountFlow,
+    deleteAllAccountsFlow,
+    startupHealthCheck,
+  };
 }

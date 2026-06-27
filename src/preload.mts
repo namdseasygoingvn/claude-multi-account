@@ -36,6 +36,7 @@ const EVENTS = new Set([
   'check-start',
   'check-done',
   'account-added',
+  'accounts-changed',
   'lan-lend-status',
   'lan-share-all',
   'lan-receive',

@@ -10,6 +10,8 @@ import type { AppContext } from '../context.js';
 export interface TrayDeps {
   /** "Add account…" */
   addAccount(): void;
+  /** "Delete all accounts…" — confirm, then remove every account. */
+  deleteAllAccounts(): void;
   /** "Repair / update Claude Code…" */
   repairClaude(): void;
   /** Tray-icon click: show the popover if hidden, hide it if visible. */
@@ -48,6 +50,7 @@ export function createTray(ctx: AppContext, deps: TrayDeps): TrayController {
       { label: `Claude Quota Monitor v${app.getVersion()}`, enabled: false },
       { type: 'separator' },
       { label: 'Add account…', click: () => deps.addAccount() },
+      { label: 'Delete all accounts…', click: () => deps.deleteAllAccounts() },
       {
         label: 'LAN',
         submenu: [

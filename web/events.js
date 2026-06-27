@@ -15,6 +15,7 @@ const EVENT_CHANNELS = [
   'check-start',
   'check-done',
   'account-added',
+  'accounts-changed',
   'lan-lend-status',
   'lan-share-all',
   'lan-receive',
@@ -39,6 +40,10 @@ function handleWs(m) {
     case 'account-added':
       // Tray-menu "Add account…" started a sign-in — open the login view for it.
       loadAccounts().then(() => openLogin(m.label));
+      break;
+    case 'accounts-changed':
+      // Tray "Delete all accounts…" (or other bulk change) — re-sync the list.
+      loadAccounts();
       break;
     case 'login-status':
       if (m.label === state.activeLogin && !state.loginDone) setModalStatus(m.status + '…');

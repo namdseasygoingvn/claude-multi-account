@@ -88,6 +88,7 @@ const windowCtl = createWindowController(ctx);
 const repair = createRepair(ctx, { showWindow: () => windowCtl.show() });
 const trayCtl = createTray(ctx, {
   addAccount: () => void repair.addAccountFlow(),
+  deleteAllAccounts: () => void repair.deleteAllAccountsFlow(),
   repairClaude: () => void repair.repairClaudeMenu(),
   toggleWindow: () => windowCtl.toggle(),
   shareAllAccounts: () => {
