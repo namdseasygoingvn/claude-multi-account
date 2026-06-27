@@ -38,6 +38,7 @@ export function fitWindow() {
       const sheet = modal.querySelector('.sheet');
       if (sheet) target = Math.max(target, Math.ceil(sheet.offsetHeight + 28));
     }
+    console.log('[cqm] fitWindow target:', target, 'chrome:', Math.round(chrome), 'cardsH:', contentH);
     invoke('win:resize', { height: target }).catch(() => {});
   });
 }

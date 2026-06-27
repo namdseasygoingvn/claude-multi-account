@@ -91,6 +91,7 @@ document.addEventListener('visibilitychange', () => {
 // the window. Both sync throws and floating promise rejections are covered.
 window.addEventListener('error', (e) => console.error('[cqm] unhandled error:', e.message, e.filename, e.lineno));
 window.addEventListener('unhandledrejection', (e) => console.error('[cqm] unhandled rejection:', e.reason));
+console.log('[cqm] renderer ready');
 
 refreshIcons();
 connectEvents();

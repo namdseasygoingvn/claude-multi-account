@@ -76,7 +76,10 @@ export function createWindowController(ctx: AppContext): WindowController {
   function resize(height: number): void {
     if (!ctx.win) return;
     const desired = Math.round(height);
-    if (!Number.isFinite(desired) || desired < 80) return;
+    if (!Number.isFinite(desired) || desired < 80) {
+      console.log(`[cqm] win:resize rejected: ${height}`);
+      return;
+    }
     // Width is always the design width (never read back — see POPOVER_WIDTH); only
     // the height tracks content. Cap the height to the work area, record it as the
     // intended height, then let position() apply the size + on-screen placement.

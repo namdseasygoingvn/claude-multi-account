@@ -16,11 +16,23 @@ export function getLog(): string {
   return buf.length > 0 ? buf.join('\n') : '(no log entries yet)';
 }
 
+/** Intercept main-process console.log/warn/error into the ring buffer. */
+export function patchMainConsole(): void {
+  for (const method of ['log', 'warn', 'error'] as const) {
+    const orig = console[method].bind(console);
+    console[method] = (...args: unknown[]) => {
+      appendLog(`main:${method}`, args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '));
+      orig(...args);
+    };
+  }
+}
+
 /** Subscribe to the renderer's console output and store it in the ring buffer. */
 export function attachRendererLog(win: BrowserWindow): void {
-  const LEVELS = ['LOG', 'WARN', 'ERR', 'DBG'] as const;
+  // level: 0=verbose 1=info 2=warning 3=error
+  const TAGS = ['VERB', 'LOG', 'WARN', 'ERR'] as const;
   win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
-    const tag = LEVELS[level] ?? String(level);
+    const tag = TAGS[level] ?? String(level);
     const src = sourceId ? ` (${sourceId.replace(/.*[\\/]/, '')}:${line})` : '';
     appendLog(`rend:${tag}`, message + src);
   });

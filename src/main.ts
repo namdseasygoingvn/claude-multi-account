@@ -4,7 +4,7 @@ import { setupEnvironment } from './bootstrap.js';
 import { setDataRoot } from './paths.js';
 import { LoginManager } from './logins.js';
 import { checkForUpdates, getUpdateSnapshot, onUpdateStateChange } from './updater.js';
-import { appendLog, attachRendererLog } from './log-buffer.js';
+import { appendLog, attachRendererLog, patchMainConsole } from './log-buffer.js';
 import { createContext } from './context.js';
 import { runUsageCheck as runUsageCheckImpl } from './usage-orchestrator.js';
 import { createWindowController } from './shell/window.js';
@@ -35,6 +35,7 @@ process.on('unhandledRejection', (reason) => {
 
 // Restore the login-shell PATH and pin CLAUDE_BIN before anything spawns `claude`.
 setupEnvironment();
+patchMainConsole(); // capture console.log/warn/error into the debug ring buffer
 
 // Single instance: a second launch just surfaces the running popover.
 if (!app.requestSingleInstanceLock()) {
