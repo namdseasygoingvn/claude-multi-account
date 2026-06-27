@@ -4,6 +4,7 @@ import { setupEnvironment } from './bootstrap.js';
 import { setDataRoot } from './paths.js';
 import { LoginManager } from './logins.js';
 import { checkForUpdates, getUpdateSnapshot, onUpdateStateChange } from './updater.js';
+import { attachRendererLog } from './log-buffer.js';
 import { createContext } from './context.js';
 import { runUsageCheck as runUsageCheckImpl } from './usage-orchestrator.js';
 import { createWindowController } from './shell/window.js';
@@ -74,6 +75,7 @@ app.whenReady().then(() => {
     lan,
   });
   windowCtl.create();
+  if (ctx.win) attachRendererLog(ctx.win);
   trayCtl.create();
 
   // Auto-update: only in a packaged build (in dev getVersion() is the stale

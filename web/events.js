@@ -24,7 +24,13 @@ const EVENT_CHANNELS = [
 // shape so the handler below is unchanged from the WebSocket version.
 export function connectEvents() {
   for (const ch of EVENT_CHANNELS) {
-    on(ch, (data) => handleWs({ type: ch, ...(data || {}) }));
+    on(ch, (data) => {
+      try {
+        handleWs({ type: ch, ...(data || {}) });
+      } catch (err) {
+        console.error('[cqm] event handler error on channel', ch, err);
+      }
+    });
   }
 }
 

@@ -1,5 +1,7 @@
 import path from 'node:path';
-import { app, Menu, Tray, nativeImage } from 'electron';
+import { app, clipboard, Menu, Tray, nativeImage } from 'electron';
+
+import { getLog } from '../log-buffer.js';
 
 import { REPO_ROOT } from '../paths.js';
 import type { AppContext } from '../context.js';
@@ -60,6 +62,19 @@ export function createTray(ctx: AppContext, deps: TrayDeps): TrayController {
         click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
       },
       { label: 'Repair / update Claude Code…', click: () => deps.repairClaude() },
+      {
+        label: 'Debug',
+        submenu: [
+          {
+            label: 'Open DevTools',
+            click: () => ctx.win?.webContents.openDevTools({ mode: 'detach' }),
+          },
+          {
+            label: 'Copy recent log to clipboard',
+            click: () => clipboard.writeText(getLog()),
+          },
+        ],
+      },
       { type: 'separator' },
       { label: 'Quit', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() },
     ]);

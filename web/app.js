@@ -86,6 +86,12 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) fitWindow();
 });
 
+// Catch unhandled errors so they surface in the renderer log (visible via
+// "Debug → Copy recent log" in the tray menu) rather than silently blanking
+// the window. Both sync throws and floating promise rejections are covered.
+window.addEventListener('error', (e) => console.error('[cqm] unhandled error:', e.message, e.filename, e.lineno));
+window.addEventListener('unhandledrejection', (e) => console.error('[cqm] unhandled rejection:', e.reason));
+
 refreshIcons();
 connectEvents();
 initUpdate(); // render the auto-update row + subscribe to update-state events
