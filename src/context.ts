@@ -41,7 +41,16 @@ export function createContext(makeLogins: (ctx: AppContext) => LoginManager): Ap
     checking: new Set<string>(),
 
     send(channel, payload) {
-      if (ctx.win && !ctx.win.isDestroyed()) ctx.win.webContents.send(channel, payload);
+      // A send can race a renderer reload: the window isn't destroyed but its
+      // frame is mid-swap, and Electron logs "Error sending from webFrameMain".
+      // Swallow it — a dropped event during a reload isn't worth crashing on.
+      if (ctx.win && !ctx.win.isDestroyed()) {
+        try {
+          ctx.win.webContents.send(channel, payload);
+        } catch {
+          /* renderer reloading; the next event will reach the fresh frame */
+        }
+      }
     },
 
     // Worst-case usage % across accounts → a compact menu-bar readout.

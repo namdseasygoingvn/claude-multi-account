@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { BrowserWindow, nativeTheme, screen, shell } from 'electron';
 
 import { REPO_ROOT } from '../paths.js';
+import { appendLog } from '../log-buffer.js';
 import type { AppContext } from '../context.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -147,18 +148,42 @@ export function createWindowController(ctx: AppContext): WindowController {
       }
     });
 
-    // Renderer recovery: if the web process is killed/crashes or the page fails
-    // to load, the popover would otherwise stay a dead blank panel until restart.
-    // Reload it so it self-heals. (Guard against a reload loop on a hard failure
-    // by only reloading when the window still exists and isn't already gone.)
-    win.webContents.on('render-process-gone', () => {
-      if (!win.isDestroyed()) win.reload();
-    });
-    win.webContents.on('did-fail-load', (_e, errorCode, _desc, _url, isMainFrame) => {
-      // -3 is ERR_ABORTED (a deliberate navigation cancel), not a real failure.
-      if (isMainFrame && errorCode !== -3 && !win.isDestroyed()) {
-        void win.loadFile(path.join(REPO_ROOT, 'web', 'index.html'));
+    // Renderer recovery: if the web process genuinely crashes or the page fails
+    // to load, the popover would otherwise stay a dead blank panel until restart,
+    // so reload it to self-heal. Two hazards make a naive reload-on-every-event
+    // worse than the disease, and both bit Windows:
+    //   1. `render-process-gone` ALSO fires for non-crashes — `clean-exit` on a
+    //      normal teardown and `killed` during a reload's own process swap — so
+    //      reloading on those turns one reload into a self-feeding loop.
+    //   2. A persistent failure (a renderer that crashes on every load) would
+    //      reload forever, the panel resetting every cycle and discarding any
+    //      in-flight /usage results — i.e. "can't even check usage".
+    // So: reload only on real crashes, and cap the burst — after a few reloads in
+    // a short window, give up and leave the last frame standing rather than thrash.
+    let reloadCount = 0;
+    let reloadWindowStart = 0;
+    const selfHeal = (why: string): void => {
+      if (win.isDestroyed()) return;
+      const now = Date.now();
+      if (now - reloadWindowStart > 10_000) {
+        reloadWindowStart = now;
+        reloadCount = 0;
       }
+      if (reloadCount >= 3) {
+        appendLog('window:recovery', `suppressed reload (${why}): too many reloads, giving up`);
+        return;
+      }
+      reloadCount++;
+      appendLog('window:recovery', `reloading popover (${why})`);
+      void win.loadFile(path.join(REPO_ROOT, 'web', 'index.html'));
+    };
+    win.webContents.on('render-process-gone', (_e, details) => {
+      if (details.reason === 'clean-exit' || details.reason === 'killed') return;
+      selfHeal(`render-process-gone:${details.reason}`);
+    });
+    win.webContents.on('did-fail-load', (_e, errorCode, desc, _url, isMainFrame) => {
+      // -3 is ERR_ABORTED (a deliberate navigation cancel), not a real failure.
+      if (isMainFrame && errorCode !== -3) selfHeal(`did-fail-load:${errorCode} ${desc}`);
     });
 
     // Popover dismiss: hide when focus leaves (unless devtools is open).
